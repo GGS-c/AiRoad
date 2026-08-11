@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+venv/
+.venv/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Next.js
+.next/
+out/
+
+# Python
+__pycache__/
+*.pyc
+
+# AI models
+*.pt
+*.onnx
+*.weights
+
+# Datasets
+datasets/
+runs/
+wandb/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
