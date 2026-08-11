@@ -1,26 +1,257 @@
-@import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+* {
+  box-sizing: border-box;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
+  margin: 0;
+  padding: 0;
   font-family: Arial, Helvetica, sans-serif;
+  background: #f5f7fa;
+}
+
+.app {
+  min-height: 100vh;
+}
+
+/* Header */
+
+.header {
+  height: 72px;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #111827;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21px;
+}
+
+.logo h1 {
+  margin: 0;
+  font-size: 20px;
+  color: #111827;
+}
+
+.logo p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.live {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 20px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.live span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+/* Search */
+
+.search-panel {
+  position: absolute;
+  z-index: 1000;
+  top: 92px;
+  left: 32px;
+
+  background: white;
+  width: 390px;
+  padding: 16px;
+
+  border-radius: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+.location {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  padding: 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.location small {
+  display: block;
+  font-size: 9px;
+  color: #9ca3af;
+  font-weight: 700;
+}
+
+.location strong {
+  display: block;
+  margin-top: 2px;
+  color: #111827;
+}
+
+.dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+
+.green {
+  background: #22c55e;
+}
+
+.red {
+  background: #ef4444;
+}
+
+.search-btn {
+  width: 100%;
+  margin-top: 12px;
+
+  border: none;
+  border-radius: 10px;
+  padding: 11px;
+
+  background: #111827;
+  color: white;
+
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.search-btn:hover {
+  background: #1f2937;
+}
+
+/* Map */
+
+.map-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.map-container {
+  width: 100%;
+  height: calc(100vh - 72px);
+  min-height: 650px;
+}
+
+/* Route Card */
+
+.route-card {
+  position: absolute;
+  z-index: 1000;
+
+  left: 32px;
+  bottom: 30px;
+
+  width: 430px;
+
+  background: white;
+  border-radius: 18px;
+
+  padding: 20px;
+
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.16);
+}
+
+.recommended {
+  font-size: 10px;
+  font-weight: 800;
+  color: #16a34a;
+  letter-spacing: 0.5px;
+}
+
+.route-card h2 {
+  margin: 5px 0 18px;
+  font-size: 20px;
+  color: #111827;
+}
+
+.route-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.route-stats small {
+  display: block;
+  color: #9ca3af;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.route-stats strong {
+  display: block;
+  margin-top: 5px;
+  color: #111827;
+  font-size: 16px;
+}
+
+.quality {
+  color: #16a34a !important;
+}
+
+.road-info {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #eee;
+
+  display: flex;
+  justify-content: space-between;
+
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.road-info strong {
+  color: #111827;
+}
+
+/* Mobile */
+
+@media (max-width: 700px) {
+  .header {
+    padding: 0 16px;
+  }
+
+  .search-panel {
+    left: 16px;
+    right: 16px;
+    width: auto;
+  }
+
+  .route-card {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    width: auto;
+  }
+
+  .map-container {
+    min-height: 700px;
+  }
 }

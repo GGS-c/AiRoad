@@ -1,69 +1,524 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import Map from "./components/Map";
+
+type Location = {
+  name: string;
+  latitude: number;
+  longitude: number;
+};
+
+type RouteData = {
+  distance: number;
+  duration: number;
+};
 
 export default function Home() {
+  const [from, setFrom] = useState("Shirpur");
+  const [to, setTo] = useState("Jalgaon");
+
+  const [loading, setLoading] = useState(false);
+
+  const [error, setError] = useState("");
+
+  const [route, setRoute] =
+    useState<RouteData | null>(null);
+
+  const [mapLocations, setMapLocations] =
+    useState<{
+      source: Location;
+      destination: Location;
+    } | null>(null);
+
+  // --------------------------------------------------
+  // Search location using our /api/search endpoint
+  // --------------------------------------------------
+
+  const searchLocation = async (
+    query: string
+  ): Promise<Location | null> => {
+    const cleanQuery = query.trim();
+
+    if (!cleanQuery) {
+      return null;
+    }
+
+    const response = await fetch(
+      `/api/search?q=${encodeURIComponent(
+        cleanQuery
+      )}`,
+      {
+        cache: "no-store",
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Location search failed (${response.status})`
+      );
+    }
+
+    const data = await response.json();
+
+    if (
+      !data.success ||
+      !data.results ||
+      data.results.length === 0
+    ) {
+      return null;
+    }
+
+    return data.results[0];
+  };
+
+  // --------------------------------------------------
+  // Find Route
+  // --------------------------------------------------
+
+  const findRoute = async () => {
+    setError("");
+    setRoute(null);
+
+    const sourceText = from.trim();
+    const destinationText = to.trim();
+
+    if (!sourceText || !destinationText) {
+      setError(
+        "Please enter both starting point and destination."
+      );
+      return;
+    }
+
+    if (
+      sourceText.toLowerCase() ===
+      destinationText.toLowerCase()
+    ) {
+      setError(
+        "Starting point and destination cannot be the same."
+      );
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // ----------------------------------------------
+      // 1. Find source
+      // ----------------------------------------------
+
+      const source =
+        await searchLocation(sourceText);
+
+      if (!source) {
+        setError(
+          `Could not find "${sourceText}". Try a more specific location.`
+        );
+        return;
+      }
+
+      // ----------------------------------------------
+      // 2. Find destination
+      // ----------------------------------------------
+
+      const destination =
+        await searchLocation(destinationText);
+
+      if (!destination) {
+        setError(
+          `Could not find "${destinationText}". Try a more specific location.`
+        );
+        return;
+      }
+
+      // ----------------------------------------------
+      // 3. Request route from OSRM
+      // ----------------------------------------------
+
+      const routeUrl =
+        `/api/route?` +
+        `sourceLat=${source.latitude}` +
+        `&sourceLng=${source.longitude}` +
+        `&destinationLat=${destination.latitude}` +
+        `&destinationLng=${destination.longitude}`;
+
+      const response =
+        await fetch(routeUrl, {
+          cache: "no-store",
+        });
+
+      if (!response.ok) {
+        const errorData =
+          await response
+            .json()
+            .catch(() => null);
+
+        throw new Error(
+          errorData?.message ||
+            `Routing failed (${response.status})`
+        );
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(
+          data.message ||
+            "Unable to calculate route."
+        );
+      }
+
+      if (!data.route) {
+        throw new Error(
+          "Route information is missing."
+        );
+      }
+
+      // ----------------------------------------------
+      // 4. Update map
+      // ----------------------------------------------
+
+      setMapLocations({
+        source,
+        destination,
+      });
+
+      // ----------------------------------------------
+      // 5. Update route information
+      // ----------------------------------------------
+
+      setRoute({
+        distance: data.route.distance,
+        duration: data.route.duration,
+      });
+
+    } catch (error) {
+      console.error(
+        "Route search error:",
+        error
+      );
+
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to find route."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --------------------------------------------------
+  // Swap From / To
+  // --------------------------------------------------
+
+  const swapLocations = () => {
+    const oldFrom = from;
+
+    setFrom(to);
+    setTo(oldFrom);
+
+    // Clear previous route because locations changed
+    setRoute(null);
+    setMapLocations(null);
+    setError("");
+  };
+
+  // --------------------------------------------------
+  // Enter key support
+  // --------------------------------------------------
+
+  const handleKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (event.key === "Enter" && !loading) {
+      findRoute();
+    }
+  };
+
+  // --------------------------------------------------
+  // Route calculations
+  // --------------------------------------------------
+
+  const distance = route
+    ? (route.distance / 1000).toFixed(1)
+    : "--";
+
+  const totalMinutes = route
+    ? Math.round(route.duration / 60)
+    : 0;
+
+  const hours = Math.floor(
+    totalMinutes / 60
+  );
+
+  const minutes = totalMinutes % 60;
+
+  const duration = route
+    ? hours > 0
+      ? `${hours}h ${minutes}m`
+      : `${minutes}m`
+    : "--";
+
+  // --------------------------------------------------
+  // UI
+  // --------------------------------------------------
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="app">
+
+      {/* ==================================================
+          HEADER
+      ================================================== */}
+
+      <header className="header">
+
+        <div className="logo">
+
+          <div className="logo-icon">
+            🚗
+          </div>
+
+          <div>
+            <h1>RoadSense AI</h1>
+
+            <p>
+              AI-powered road safety
+            </p>
+          </div>
+
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+
+        <div className="live">
+          <span />
+          Live
+        </div>
+
+      </header>
+
+      {/* ==================================================
+          SEARCH PANEL
+      ================================================== */}
+
+      <section className="search-panel">
+
+        {/* FROM */}
+
+        <div className="location">
+
+          <span className="dot green" />
+
+          <div className="input-container">
+
+            <small>
+              FROM
+            </small>
+
+            <input
+              type="text"
+              value={from}
+              onChange={(event) =>
+                setFrom(event.target.value)
+              }
+              onKeyDown={handleKeyDown}
+              placeholder="Starting location"
+              autoComplete="off"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+          </div>
+
         </div>
-      </main>
-    </div>
+
+
+        {/* SWAP BUTTON */}
+
+        <button
+          type="button"
+          className="swap-btn"
+          onClick={swapLocations}
+          disabled={loading}
+          aria-label="Swap locations"
+          title="Swap locations"
+        >
+          ⇅
+        </button>
+
+
+        {/* TO */}
+
+        <div className="location">
+
+          <span className="dot red" />
+
+          <div className="input-container">
+
+            <small>
+              TO
+            </small>
+
+            <input
+              type="text"
+              value={to}
+              onChange={(event) =>
+                setTo(event.target.value)
+              }
+              onKeyDown={handleKeyDown}
+              placeholder="Destination"
+              autoComplete="off"
+            />
+
+          </div>
+
+        </div>
+
+
+        {/* FIND ROUTE */}
+
+        <button
+          type="button"
+          className="search-btn"
+          onClick={findRoute}
+          disabled={loading}
+        >
+
+          {loading ? (
+            <>
+              <span className="spinner" />
+              Finding Route...
+            </>
+          ) : (
+            <>
+              Find Route
+            </>
+          )}
+
+        </button>
+
+
+        {/* ERROR */}
+
+        {error && (
+          <div className="error-message">
+            <span>⚠️</span>
+
+            <span>
+              {error}
+            </span>
+          </div>
+        )}
+
+      </section>
+
+
+      {/* ==================================================
+          MAP
+      ================================================== */}
+
+      <section className="map-wrapper">
+
+        <Map
+          locations={mapLocations}
+        />
+
+
+        {/* ==================================================
+            ROUTE INFORMATION CARD
+        ================================================== */}
+
+        <div className="route-card">
+
+          <span className="recommended">
+            ⭐ RECOMMENDED ROUTE
+          </span>
+
+          <h2>
+            {from} → {to}
+          </h2>
+
+
+          <div className="route-stats">
+
+            {/* DISTANCE */}
+
+            <div className="stat">
+
+              <small>
+                DISTANCE
+              </small>
+
+              <strong>
+                {distance}
+                <span className="unit">
+                  km
+                </span>
+              </strong>
+
+            </div>
+
+
+            {/* TIME */}
+
+            <div className="stat">
+
+              <small>
+                EST. TIME
+              </small>
+
+              <strong>
+                {duration}
+              </strong>
+
+            </div>
+
+
+            {/* ROAD QUALITY */}
+
+            <div className="stat">
+
+              <small>
+                ROAD QUALITY
+              </small>
+
+              <strong className="quality">
+                --
+              </strong>
+
+            </div>
+
+          </div>
+
+
+          {/* ROAD INFORMATION */}
+
+          <div className="road-info">
+
+            <span>
+              🕳️ Potholes detected
+            </span>
+
+            <strong>
+              --
+            </strong>
+
+          </div>
+
+
+          {/* FUTURE AI MESSAGE */}
+
+          <div className="ai-status">
+
+            <span className="ai-dot" />
+
+            <span>
+              AI road analysis will appear here
+            </span>
+
+          </div>
+
+        </div>
+
+      </section>
+
+    </main>
   );
 }
