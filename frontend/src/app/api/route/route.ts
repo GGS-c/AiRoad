@@ -1,79 +1,169 @@
 import { NextResponse } from "next/server";
 
-type Coordinates = [number, number]; // [latitude, longitude]
+/* =====================================================
+   TYPES
+===================================================== */
+
+type Coordinate = [number, number]; 
+// Internal format: [latitude, longitude]
+
+type RouteGeometry = {
+  type: "LineString";
+  coordinates: [number, number][];
+};
+
+type OSRMRoute = {
+  distance: number;
+  duration: number;
+  weight?: number;
+
+  geometry?: RouteGeometry;
+};
+
+type OSRMResponse = {
+  code: string;
+
+  message?: string;
+
+  routes?: OSRMRoute[];
+
+  waypoints?: unknown[];
+};
+
+/* =====================================================
+   ROUTING SERVERS
+===================================================== */
 
 const routingServers = [
   {
     name: "OSRM Project",
     url: "https://router.project-osrm.org",
   },
+
   {
     name: "OSM Germany",
     url: "https://routing.openstreetmap.de/routed-car",
   },
 ];
 
-export async function GET(request: Request) {
+/* =====================================================
+   HELPER - VALIDATE COORDINATES
+===================================================== */
+
+function isValidCoordinate(
+  latitude: number,
+  longitude: number
+) {
+  return (
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    longitude >= -180 &&
+    longitude <= 180
+  );
+}
+
+/* =====================================================
+   HELPER - FETCH WITH TIMEOUT
+===================================================== */
+
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs = 15000
+) {
+  const controller =
+    new AbortController();
+
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
   try {
-    // --------------------------------------------------
-    // 1. Read coordinates from URL
-    // --------------------------------------------------
+    return await fetch(url, {
+      cache: "no-store",
 
-    const { searchParams } = new URL(request.url);
+      signal: controller.signal,
 
-    const sourceLat = searchParams.get("sourceLat");
-    const sourceLng = searchParams.get("sourceLng");
+      headers: {
+        "User-Agent":
+          "RoadSenseAI/1.0 (student-semester-project)",
+
+        Accept: "application/json",
+      },
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/* =====================================================
+   GET ROUTE
+===================================================== */
+
+export async function GET(
+  request: Request
+) {
+  try {
+    /* =================================================
+       1. READ QUERY PARAMETERS
+    ================================================= */
+
+    const { searchParams } =
+      new URL(request.url);
+
+    const sourceLat = Number(
+      searchParams.get("sourceLat")
+    );
+
+    const sourceLng = Number(
+      searchParams.get("sourceLng")
+    );
 
     const destinationLat =
-      searchParams.get("destinationLat");
+      Number(
+        searchParams.get(
+          "destinationLat"
+        )
+      );
 
     const destinationLng =
-      searchParams.get("destinationLng");
-
-    // --------------------------------------------------
-    // 2. Validate coordinates
-    // --------------------------------------------------
-
-    if (
-      !sourceLat ||
-      !sourceLng ||
-      !destinationLat ||
-      !destinationLng
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Source and destination coordinates are required.",
-        },
-        {
-          status: 400,
-        }
+      Number(
+        searchParams.get(
+          "destinationLng"
+        )
       );
-    }
 
-    const source: Coordinates = [
-      Number(sourceLat),
-      Number(sourceLng),
-    ];
+    console.log(
+      "Route request:",
+      {
+        sourceLat,
+        sourceLng,
+        destinationLat,
+        destinationLng,
+      }
+    );
 
-    const destination: Coordinates = [
-      Number(destinationLat),
-      Number(destinationLng),
-    ];
-
-    // Check if coordinates are valid numbers
+    /* =================================================
+       2. VALIDATE COORDINATES
+    ================================================= */
 
     if (
-      source.some((value) => !Number.isFinite(value)) ||
-      destination.some((value) =>
-        !Number.isFinite(value)
+      !isValidCoordinate(
+        sourceLat,
+        sourceLng
+      ) ||
+      !isValidCoordinate(
+        destinationLat,
+        destinationLng
       )
     ) {
       return NextResponse.json(
         {
           success: false,
-          message: "Invalid coordinates.",
+
+          message:
+            "Invalid source or destination coordinates.",
         },
         {
           status: 400,
@@ -81,55 +171,51 @@ export async function GET(request: Request) {
       );
     }
 
-    // --------------------------------------------------
-    // 3. Validate latitude / longitude ranges
-    // --------------------------------------------------
+    /* =================================================
+       3. CREATE OSRM PATH
+       
+       OSRM requires:
+       
+       longitude,latitude
+       
+       NOT:
+       
+       latitude,longitude
+    ================================================= */
 
-    if (
-      source[0] < -90 ||
-      source[0] > 90 ||
-      destination[0] < -90 ||
-      destination[0] > 90 ||
-      source[1] < -180 ||
-      source[1] > 180 ||
-      destination[1] < -180 ||
-      destination[1] > 180
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Coordinates are outside valid range.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
+    const source: Coordinate = [
+      sourceLat,
+      sourceLng,
+    ];
 
-    console.log("Source:", source);
-    console.log("Destination:", destination);
-
-    // --------------------------------------------------
-    // 4. Create OSRM route path
-    //
-    // OSRM requires:
-    // longitude,latitude
-    // --------------------------------------------------
+    const destination: Coordinate = [
+      destinationLat,
+      destinationLng,
+    ];
 
     const routePath =
       `/route/v1/driving/` +
-      `${source[1]},${source[0]};` +
-      `${destination[1]},${destination[0]}` +
-      `?overview=full&geometries=geojson`;
+      `${sourceLng},${sourceLat};` +
+      `${destinationLng},${destinationLat}` +
+      `?alternatives=true` +
+      `&overview=full` +
+      `&geometries=geojson`;
+
+    console.log(
+      "OSRM route path:",
+      routePath
+    );
+
+    /* =================================================
+       4. TRY ROUTING SERVERS
+    ================================================= */
 
     let lastError =
       "Unknown routing error";
 
-    // --------------------------------------------------
-    // 5. Try routing servers
-    // --------------------------------------------------
-
-    for (const server of routingServers) {
+    for (
+      const server of routingServers
+    ) {
       try {
         console.log(
           `Trying routing server: ${server.name}`
@@ -143,95 +229,193 @@ export async function GET(request: Request) {
           url
         );
 
-        // ----------------------------------------------
-        // Request routing server
-        // ----------------------------------------------
+        /* =============================================
+           REQUEST
+        ============================================= */
 
-        const response = await fetch(url, {
-          cache: "no-store",
-
-          signal: AbortSignal.timeout(
+        const response =
+          await fetchWithTimeout(
+            url,
             15000
-          ),
+          );
 
-          headers: {
-            "User-Agent":
-              "RoadSenseAI/1.0",
-            Accept:
-              "application/json",
-          },
-        });
-
-        // ----------------------------------------------
-        // HTTP error
-        // ----------------------------------------------
+        /* =============================================
+           HTTP ERROR
+        ============================================= */
 
         if (!response.ok) {
           lastError =
             `${server.name}: HTTP ${response.status}`;
 
-          console.error(lastError);
+          console.error(
+            lastError
+          );
 
           continue;
         }
 
-        // ----------------------------------------------
-        // Parse response
-        // ----------------------------------------------
+        /* =============================================
+           JSON
+        ============================================= */
 
         const data =
-          await response.json();
+          (await response.json()) as OSRMResponse;
 
-        // ----------------------------------------------
-        // OSRM error
-        // ----------------------------------------------
+        /* =============================================
+           OSRM ERROR
+        ============================================= */
 
         if (data.code !== "Ok") {
           lastError =
-            `${server.name}: ${data.code}`;
+            `${server.name}: ${
+              data.code ||
+              "Unknown OSRM error"
+            }`;
 
-          console.error(lastError);
+          console.error(
+            lastError
+          );
 
           continue;
         }
 
-        // ----------------------------------------------
-        // Get first route
-        // ----------------------------------------------
+        /* =============================================
+           CHECK ROUTES
+        ============================================= */
 
-        const route =
-          data.routes?.[0];
-
-        if (!route) {
+        if (
+          !Array.isArray(
+            data.routes
+          ) ||
+          data.routes.length === 0
+        ) {
           lastError =
-            `${server.name}: No route found`;
+            `${server.name}: No routes found`;
 
-          console.error(lastError);
+          console.error(
+            lastError
+          );
 
           continue;
         }
-
-        // ----------------------------------------------
-        // Route successfully received
-        // ----------------------------------------------
 
         console.log(
-          `Route successfully received from ${server.name}`
+          `${data.routes.length} route(s) received from ${server.name}`
         );
 
-        // ----------------------------------------------
-        // Calculate basic information
-        // ----------------------------------------------
+        /* =============================================
+           VALIDATE + FORMAT ROUTES
+        ============================================= */
 
-        const distanceKm =
-          route.distance / 1000;
+        const routes = data.routes
+          .filter((route) => {
+            return (
+              Number.isFinite(
+                route.distance
+              ) &&
+              Number.isFinite(
+                route.duration
+              ) &&
+              route.geometry &&
+              Array.isArray(
+                route.geometry
+                  .coordinates
+              ) &&
+              route.geometry
+                .coordinates.length >= 2
+            );
+          })
+          .map(
+            (
+              route,
+              index
+            ) => {
+              /* ---------------------------------------
+                 Safety values are TEMPORARY.
+                 
+                 Later these will come from:
+                 YOLO + pothole model + road analysis.
+              --------------------------------------- */
 
-        const durationMinutes =
-          route.duration / 60;
+              const potholeCount = 0;
 
-        // ----------------------------------------------
-        // Return response
-        // ----------------------------------------------
+              const riskScore = 0;
+
+              const safetyScore = 100;
+
+              return {
+                id: index + 1,
+
+                distance:
+                  route.distance,
+
+                duration:
+                  route.duration,
+
+                weight:
+                  route.weight ??
+                  route.duration,
+
+                geometry:
+                  route.geometry,
+
+                potholeCount,
+
+                riskScore,
+
+                safetyScore,
+              };
+            }
+          );
+
+        /* =============================================
+           NO VALID ROUTES
+        ============================================= */
+
+        if (routes.length === 0) {
+          lastError =
+            `${server.name}: Route geometry missing`;
+
+          console.error(
+            lastError
+          );
+
+          continue;
+        }
+
+        /* =============================================
+           LOG ROUTES
+        ============================================= */
+
+        routes.forEach(
+          (route) => {
+            console.log(
+              `Route ${route.id}:`,
+              {
+                distanceKm:
+                  (
+                    route.distance /
+                    1000
+                  ).toFixed(2),
+
+                durationMin:
+                  Math.round(
+                    route.duration /
+                      60
+                  ),
+
+                points:
+                  route.geometry
+                    ?.coordinates
+                    .length,
+              }
+            );
+          }
+        );
+
+        /* =============================================
+           SUCCESS RESPONSE
+        ============================================= */
 
         return NextResponse.json({
           success: true,
@@ -239,54 +423,74 @@ export async function GET(request: Request) {
           provider: server.name,
 
           source: {
-            latitude: source[0],
-            longitude: source[1],
+            name: "Source",
+
+            latitude:
+              sourceLat,
+
+            longitude:
+              sourceLng,
           },
 
           destination: {
-            latitude: destination[0],
-            longitude: destination[1],
+            name: "Destination",
+
+            latitude:
+              destinationLat,
+
+            longitude:
+              destinationLng,
           },
 
-          route: {
-            distance: route.distance,
+          routes,
 
-            distanceKm:
-              Number(
-                distanceKm.toFixed(2)
-              ),
-
-            duration:
-              route.duration,
-
-            durationMinutes:
-              Number(
-                durationMinutes.toFixed(1)
-              ),
-
-            geometry:
-              route.geometry,
-          },
+          routeCount:
+            routes.length,
         });
       } catch (error) {
-        lastError =
+        /* =============================================
+           SERVER FAILURE
+        ============================================= */
+
+        if (
           error instanceof Error
-            ? error.message
-            : "Unknown routing error";
+        ) {
+          if (
+            error.name ===
+            "AbortError"
+          ) {
+            lastError =
+              `${server.name}: Request timed out`;
+          } else {
+            lastError =
+              `${server.name}: ${error.message}`;
+          }
+        } else {
+          lastError =
+            `${server.name}: Unknown error`;
+        }
 
         console.error(
           `${server.name} failed:`,
           error
         );
 
-        // Try next server
+        /* ---------------------------------------------
+           Try next server
+        --------------------------------------------- */
+
         continue;
       }
     }
 
-    // --------------------------------------------------
-    // 6. All routing servers failed
-    // --------------------------------------------------
+    /* =================================================
+       ALL SERVERS FAILED
+    ================================================= */
+
+    console.error(
+      "All routing servers failed:",
+      lastError
+    );
 
     return NextResponse.json(
       {
@@ -302,20 +506,26 @@ export async function GET(request: Request) {
       }
     );
   } catch (error) {
-    // --------------------------------------------------
-    // 7. Unexpected API error
-    // --------------------------------------------------
+    /* =================================================
+       UNEXPECTED ERROR
+    ================================================= */
 
     console.error(
-      "Route API error:",
+      "Route API unexpected error:",
       error
     );
 
     return NextResponse.json(
       {
         success: false,
+
         message:
-          "Unexpected routing API error.",
+          "Invalid routing request.",
+
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unknown error",
       },
       {
         status: 500,

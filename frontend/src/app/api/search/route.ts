@@ -1,35 +1,92 @@
 import { NextResponse } from "next/server";
 
-type SearchResult = {
-  name: string;
-  latitude: number;
-  longitude: number;
-  type: string | null;
-  category: string | null;
-  importance: number;
-  address?: {
-    city?: string;
-    town?: string;
-    village?: string;
-    municipality?: string;
-    district?: string;
-    state?: string;
-    country?: string;
-  };
+/* =====================================================
+   TYPES
+===================================================== */
+
+type NominatimAddress = {
+  city?: string;
+  town?: string;
+  village?: string;
+  municipality?: string;
+  suburb?: string;
+
+  county?: string;
+  district?: string;
+  state_district?: string;
+
+  state?: string;
+  postcode?: string;
+
+  country?: string;
+  country_code?: string;
 };
 
-export async function GET(request: Request) {
+type SearchResult = {
+  name: string;
+
+  latitude: number;
+  longitude: number;
+
+  type: string | null;
+  category: string | null;
+
+  importance: number;
+
+  address: NominatimAddress;
+};
+
+/* =====================================================
+   HELPERS
+===================================================== */
+
+function normalizeQuery(
+  value: string
+): string {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[-]+$/g, "")
+    .trim();
+}
+
+function getSettlementType(
+  item: SearchResult
+): boolean {
+  const type =
+    item.type?.toLowerCase() || "";
+
+  return [
+    "city",
+    "town",
+    "village",
+    "municipality",
+    "suburb",
+  ].includes(type);
+}
+
+/* =====================================================
+   GET
+===================================================== */
+
+export async function GET(
+  request: Request
+) {
   try {
-    // --------------------------------------------
-    // 1. Get search query
-    // --------------------------------------------
+    /* =================================================
+       1. GET QUERY
+    ================================================= */
 
     const { searchParams } =
       new URL(request.url);
 
-    const query = searchParams.get("q");
+    const rawQuery =
+      searchParams.get("q");
 
-    if (!query || !query.trim()) {
+    if (
+      !rawQuery ||
+      !rawQuery.trim()
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -37,52 +94,88 @@ export async function GET(request: Request) {
             "Search query is required.",
           results: [],
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
-    const cleanQuery = query.trim();
+    /* =================================================
+       2. CLEAN QUERY
+    ================================================= */
+
+    const cleanQuery =
+      normalizeQuery(rawQuery);
 
     console.log(
-      `Searching location: ${cleanQuery}`
+      `🔎 Searching location: ${cleanQuery}`
     );
 
-    // --------------------------------------------
-    // 2. Improve query
-    //
-    // For Indian locations, adding Maharashtra
-    // helps when user enters only "Shirpur".
-    // --------------------------------------------
+    /*
+     * For this RoadSense project we are
+     * mainly working with Maharashtra.
+     *
+     * If the user already mentions Maharashtra,
+     * don't add it twice.
+     */
+
+    const lowerQuery =
+      cleanQuery.toLowerCase();
 
     const searchQuery =
-      `${cleanQuery}, Maharashtra, India`;
+      lowerQuery.includes(
+        "maharashtra"
+      )
+        ? cleanQuery
+        : `${cleanQuery}, Maharashtra, India`;
 
-    // --------------------------------------------
-    // 3. Nominatim URL
-    // --------------------------------------------
+    /* =================================================
+       3. NOMINATIM URL
+    ================================================= */
 
     const url =
       "https://nominatim.openstreetmap.org/search" +
       `?format=jsonv2` +
-      `&q=${encodeURIComponent(searchQuery)}` +
+      `&q=${encodeURIComponent(
+        searchQuery
+      )}` +
       `&limit=10` +
       `&countrycodes=in` +
-      `&addressdetails=1`;
+      `&addressdetails=1` +
+      `&dedupe=1`;
 
-    // --------------------------------------------
-    // 4. Call Nominatim
-    // --------------------------------------------
+    console.log(
+      "Nominatim query:",
+      searchQuery
+    );
 
-    const response = await fetch(url, {
-      cache: "no-store",
+    /* =================================================
+       4. CALL NOMINATIM
+    ================================================= */
 
-      headers: {
-        "User-Agent":
-          "RoadSenseAI/1.0 (student-semester-project)",
-        Accept:
-          "application/json",
-      },
-    });
+    const response =
+      await fetch(url, {
+        cache: "no-store",
+
+        signal:
+          AbortSignal.timeout(
+            10000
+          ),
+
+        headers: {
+          /*
+           * Identify your application.
+           */
+          "User-Agent":
+            "RoadSenseAI/1.0 (student-semester-project)",
+
+          Accept:
+            "application/json",
+
+          "Accept-Language":
+            "en",
+        },
+      });
 
     if (!response.ok) {
       throw new Error(
@@ -93,194 +186,395 @@ export async function GET(request: Request) {
     const data =
       await response.json();
 
+    /* =================================================
+       5. NO RESULTS
+    ================================================= */
+
     if (
       !Array.isArray(data) ||
       data.length === 0
     ) {
+      console.log(
+        `❌ No location found: ${cleanQuery}`
+      );
+
       return NextResponse.json({
         success: true,
+
+        query: cleanQuery,
+
         results: [],
+
         message:
           `No location found for "${cleanQuery}".`,
       });
     }
 
-    // --------------------------------------------
-    // 5. Convert Nominatim results
-    // --------------------------------------------
+    /* =================================================
+       6. CONVERT RESULTS
+    ================================================= */
 
     const results: SearchResult[] =
-      data.map((item: any) => ({
-        name:
-          item.display_name,
+      data
+        .map((item: any) => ({
+          name:
+            String(
+              item.display_name || ""
+            ),
 
-        latitude:
-          Number(item.lat),
+          latitude:
+            Number(item.lat),
 
-        longitude:
-          Number(item.lon),
+          longitude:
+            Number(item.lon),
 
-        type:
-          item.type || null,
+          type:
+            item.type
+              ? String(item.type)
+              : null,
 
-        category:
-          item.category || null,
+          category:
+            item.category
+              ? String(item.category)
+              : null,
 
-        importance:
-          Number(item.importance || 0),
+          importance:
+            Number(
+              item.importance || 0
+            ),
 
-        address:
-          item.address || {},
-      }));
+          address:
+            item.address || {},
+        }))
+        .filter(
+          (item: SearchResult) =>
+            Number.isFinite(
+              item.latitude
+            ) &&
+            Number.isFinite(
+              item.longitude
+            )
+        );
 
-    // --------------------------------------------
-    // 6. Filter valid coordinates
-    // --------------------------------------------
+    /* =================================================
+       7. RANK RESULTS
+    ================================================= */
 
-    const validResults =
-      results.filter(
-        (item) =>
-          Number.isFinite(
-            item.latitude
-          ) &&
-          Number.isFinite(
-            item.longitude
-          )
-      );
-
-    // --------------------------------------------
-    // 7. Ranking
-    //
-    // Prefer:
-    // - Maharashtra
-    // - Dhule district
-    // - Town / city / village
-    // - Higher importance
-    // --------------------------------------------
+    const queryLower =
+      cleanQuery.toLowerCase();
 
     const rankedResults =
-      validResults.sort(
+      results.sort(
         (a, b) => {
-          const score = (
-            item: SearchResult
-          ) => {
-            let value =
-              item.importance * 10;
+          const calculateScore =
+            (
+              item: SearchResult
+            ) => {
+              let score = 0;
 
-            const state =
-              item.address?.state
-                ?.toLowerCase() || "";
+              /* -----------------------------------------
+                 BASE IMPORTANCE
+              ----------------------------------------- */
 
-            const district =
-              item.address?.district
-                ?.toLowerCase() || "";
+              score +=
+                item.importance * 20;
 
-            const type =
-              item.type
-                ?.toLowerCase() || "";
+              /* -----------------------------------------
+                 ADDRESS
+              ----------------------------------------- */
 
-            const category =
-              item.category
-                ?.toLowerCase() || "";
+              const address =
+                item.address;
 
-            const name =
-              item.name
-                ?.toLowerCase() || "";
+              const state =
+                (
+                  address.state ||
+                  ""
+                ).toLowerCase();
 
-            // Maharashtra preference
-            if (
-              state.includes(
+              const stateDistrict =
+                (
+                  address.state_district ||
+                  ""
+                ).toLowerCase();
+
+              const district =
+                (
+                  address.district ||
+                  ""
+                ).toLowerCase();
+
+              const county =
+                (
+                  address.county ||
+                  ""
+                ).toLowerCase();
+
+              const city =
+                (
+                  address.city ||
+                  ""
+                ).toLowerCase();
+
+              const town =
+                (
+                  address.town ||
+                  ""
+                ).toLowerCase();
+
+              const village =
+                (
+                  address.village ||
+                  ""
+                ).toLowerCase();
+
+              const name =
+                item.name.toLowerCase();
+
+              const type =
+                (
+                  item.type || ""
+                ).toLowerCase();
+
+              const category =
+                (
+                  item.category || ""
+                ).toLowerCase();
+
+              /* -----------------------------------------
+                 MAHARASHTRA
+              ----------------------------------------- */
+
+              if (
+                state ===
                 "maharashtra"
-              )
-            ) {
-              value += 20;
-            }
+              ) {
+                score += 40;
+              }
 
-            // Dhule preference
-            if (
-              district.includes("dhule")
-            ) {
-              value += 30;
-            }
+              /* -----------------------------------------
+                 DHULE
+                 
+                 Nominatim may return Dhule as:
+                 state_district
+                 district
+                 county
+              ----------------------------------------- */
 
-            // Settlement preference
-            if (
-              [
-                "city",
-                "town",
-                "village",
-                "municipality",
-                "suburb",
-              ].includes(type)
-            ) {
-              value += 15;
-            }
+              if (
+                stateDistrict.includes(
+                  "dhule"
+                )
+              ) {
+                score += 35;
+              }
 
-            // Place category
-            if (
-              category === "place"
-            ) {
-              value += 10;
-            }
+              if (
+                district.includes(
+                  "dhule"
+                )
+              ) {
+                score += 35;
+              }
 
-            // Exact query match
-            if (
-              name.includes(
-                cleanQuery.toLowerCase()
-              )
-            ) {
-              value += 5;
-            }
+              if (
+                county.includes(
+                  "dhule"
+                )
+              ) {
+                score += 30;
+              }
 
-            return value;
-          };
+              /* -----------------------------------------
+                 JALGAON
+              ----------------------------------------- */
 
-          return score(b) - score(a);
+              if (
+                stateDistrict.includes(
+                  "jalgaon"
+                )
+              ) {
+                score += 25;
+              }
+
+              if (
+                district.includes(
+                  "jalgaon"
+                )
+              ) {
+                score += 25;
+              }
+
+              if (
+                county.includes(
+                  "jalgaon"
+                )
+              ) {
+                score += 20;
+              }
+
+              /* -----------------------------------------
+                 CITY / TOWN / VILLAGE
+              ----------------------------------------- */
+
+              if (
+                getSettlementType(
+                  item
+                )
+              ) {
+                score += 25;
+              }
+
+              /* -----------------------------------------
+                 PLACE CATEGORY
+              ----------------------------------------- */
+
+              if (
+                category ===
+                "place"
+              ) {
+                score += 15;
+              }
+
+              /* -----------------------------------------
+                 EXACT NAME MATCH
+              ----------------------------------------- */
+
+              if (
+                name.includes(
+                  queryLower
+                )
+              ) {
+                score += 20;
+              }
+
+              /* -----------------------------------------
+                 CITY MATCH
+              ----------------------------------------- */
+
+              if (
+                city &&
+                queryLower.includes(
+                  city
+                )
+              ) {
+                score += 15;
+              }
+
+              /* -----------------------------------------
+                 TOWN MATCH
+              ----------------------------------------- */
+
+              if (
+                town &&
+                queryLower.includes(
+                  town
+                )
+              ) {
+                score += 15;
+              }
+
+              /* -----------------------------------------
+                 VILLAGE MATCH
+              ----------------------------------------- */
+
+              if (
+                village &&
+                queryLower.includes(
+                  village
+                )
+              ) {
+                score += 10;
+              }
+
+              /* -----------------------------------------
+                 ADMINISTRATIVE PENALTY
+                 
+                 We prefer actual places over
+                 large administrative boundaries.
+              ----------------------------------------- */
+
+              if (
+                type ===
+                "administrative"
+              ) {
+                score -= 15;
+              }
+
+              return score;
+            };
+
+          return (
+            calculateScore(b) -
+            calculateScore(a)
+          );
         }
       );
 
-    // --------------------------------------------
-    // 8. Return top results
-    // --------------------------------------------
+    /* =================================================
+       8. FINAL RESULTS
+    ================================================= */
 
     const finalResults =
       rankedResults
         .slice(0, 5)
-        .map((item) => ({
-          name: item.name,
+        .map(
+          (item) => ({
+            name:
+              item.name,
 
-          latitude:
-            item.latitude,
+            latitude:
+              item.latitude,
 
-          longitude:
-            item.longitude,
+            longitude:
+              item.longitude,
 
-          type:
-            item.type,
+            type:
+              item.type,
 
-          category:
-            item.category,
+            category:
+              item.category,
 
-          address:
-            item.address,
-        }));
+            address:
+              item.address,
+          })
+        );
 
-    console.log(
-      "Best search result:",
-      finalResults[0]
-    );
+    /* =================================================
+       9. LOG BEST RESULT
+    ================================================= */
+
+    if (
+      finalResults.length > 0
+    ) {
+      console.log(
+        "✅ Best search result:",
+        finalResults[0]
+      );
+    }
+
+    /* =================================================
+       10. RETURN
+    ================================================= */
 
     return NextResponse.json({
       success: true,
 
       query: cleanQuery,
 
-      results: finalResults,
-    });
+      results:
+        finalResults,
 
+      count:
+        finalResults.length,
+    });
   } catch (error) {
+    /* =================================================
+       ERROR
+    ================================================= */
+
     console.error(
-      "Location search error:",
+      "❌ Location search error:",
       error
     );
 

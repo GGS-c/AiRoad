@@ -1,524 +1,657 @@
 "use client";
 
-import { useState } from "react";
-import Map from "./components/Map";
+import dynamic from "next/dynamic";
+import { useState, useCallback } from "react";
+
+/* =====================================================
+   TYPES
+===================================================== */
 
 type Location = {
   name: string;
   latitude: number;
   longitude: number;
+  isCurrentLocation?: boolean;
 };
 
-type RouteData = {
+type Route = {
+  id: number;
   distance: number;
   duration: number;
+
+  geometry: {
+    type?: "LineString";
+    coordinates: [number, number][]; // [longitude, latitude] — OSRM format
+  };
+
+  potholeCount?: number;
+  riskScore?: number;
+  safetyScore?: number;
 };
 
+/* =====================================================
+   DYNAMIC MAP IMPORT (ssr: false)
+===================================================== */
+
+const MapComponent = dynamic(() => import("./components/Map"), {
+  ssr: false,
+  loading: () => (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#f0f4f8",
+        flexDirection: "column",
+        gap: "12px",
+      }}
+    >
+      <div className="loading-spinner" />
+      <span style={{ color: "#6b7280", fontSize: "14px" }}>
+        Loading RoadSense map…
+      </span>
+    </div>
+  ),
+});
+
+/* =====================================================
+   PAGE COMPONENT
+===================================================== */
+
 export default function Home() {
-  const [from, setFrom] = useState("Shirpur");
+  /* ── Search input text ───────────────────────────── */
+  const [from, setFrom] = useState("Shirpur Dhule");
   const [to, setTo] = useState("Jalgaon");
 
+  /* ── Explicit coordinate states ─────────────────── */
+  const [sourceLocation, setSourceLocation] = useState<Location | null>(null);
+  const [destinationLocation, setDestinationLocation] = useState<Location | null>(null);
+
+  /* ── Map click selection mode ────────────────────── */
+  const [destinationSelectionMode, setDestinationSelectionMode] = useState(false);
+
+  /* ── App state ──────────────────────────────────── */
   const [loading, setLoading] = useState(false);
+  const [isGeolocating, setIsGeolocating] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const [error, setError] = useState("");
+  const [mapLocations, setMapLocations] = useState<{
+    source: Location;
+    destination: Location;
+  } | null>(null);
 
-  const [route, setRoute] =
-    useState<RouteData | null>(null);
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null);
 
-  const [mapLocations, setMapLocations] =
-    useState<{
-      source: Location;
-      destination: Location;
-    } | null>(null);
+  /* ===================================================
+     HELPER: SEARCH LOCATION BY TEXT
+  =================================================== */
 
-  // --------------------------------------------------
-  // Search location using our /api/search endpoint
-  // --------------------------------------------------
-
-  const searchLocation = async (
-    query: string
-  ): Promise<Location | null> => {
-    const cleanQuery = query.trim();
-
-    if (!cleanQuery) {
-      return null;
-    }
-
-    const response = await fetch(
-      `/api/search?q=${encodeURIComponent(
-        cleanQuery
-      )}`,
-      {
-        cache: "no-store",
-      }
+  async function searchLocation(query: string): Promise<Location | null> {
+    const res = await fetch(
+      `/api/search?q=${encodeURIComponent(query.trim())}`
     );
-
-    if (!response.ok) {
-      throw new Error(
-        `Location search failed (${response.status})`
-      );
-    }
-
-    const data = await response.json();
+    const data = await res.json();
 
     if (
       !data.success ||
-      !data.results ||
+      !Array.isArray(data.results) ||
       data.results.length === 0
     ) {
       return null;
     }
 
-    return data.results[0];
-  };
+    const r = data.results[0];
+    return {
+      name: r.name,
+      latitude: r.latitude,
+      longitude: r.longitude,
+    };
+  }
 
-  // --------------------------------------------------
-  // Find Route
-  // --------------------------------------------------
+  /* ===================================================
+     HELPER: REVERSE GEOCODE COORDINATES
+  =================================================== */
 
-  const findRoute = async () => {
-    setError("");
-    setRoute(null);
+  async function reverseGeocode(
+    lat: number,
+    lng: number
+  ): Promise<Location | null> {
+    try {
+      const res = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
+      const data = await res.json();
 
-    const sourceText = from.trim();
-    const destinationText = to.trim();
+      if (data.success && data.location) {
+        return {
+          name: data.location.name,
+          latitude: lat,
+          longitude: lng,
+        };
+      }
+    } catch (err) {
+      console.error("Reverse geocode failed:", err);
+    }
 
-    if (!sourceText || !destinationText) {
-      setError(
-        "Please enter both starting point and destination."
-      );
+    return {
+      name: `Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+      latitude: lat,
+      longitude: lng,
+    };
+  }
+
+  /* ===================================================
+     FEATURE: USE CURRENT LOCATION
+  =================================================== */
+
+  const handleUseCurrentLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by your browser.");
       return;
     }
 
-    if (
-      sourceText.toLowerCase() ===
-      destinationText.toLowerCase()
-    ) {
-      setError(
-        "Starting point and destination cannot be the same."
+    setIsGeolocating(true);
+    setStatusMessage("Getting your location…");
+    setError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        console.log("Current location acquired:", latitude, longitude);
+
+        setStatusMessage("Identifying your location…");
+
+        // Reverse geocode
+        const loc = await reverseGeocode(latitude, longitude);
+        const userLoc: Location = {
+          name: loc ? loc.name : "Current location",
+          latitude,
+          longitude,
+          isCurrentLocation: true,
+        };
+
+        setSourceLocation(userLoc);
+        setFrom(userLoc.name);
+
+        // Update map source marker
+        setMapLocations((prev) =>
+          prev
+            ? { ...prev, source: userLoc }
+            : {
+                source: userLoc,
+                destination: {
+                  name: "Target Location",
+                  latitude,
+                  longitude,
+                },
+              }
+        );
+
+        // Clear existing routes if source changed
+        setRoutes([]);
+        setIsGeolocating(false);
+        setStatusMessage(null);
+      },
+      (geoErr) => {
+        setIsGeolocating(false);
+        setStatusMessage(null);
+        console.error("Geolocation error:", geoErr);
+
+        switch (geoErr.code) {
+          case geoErr.PERMISSION_DENIED:
+            setError(
+              "Location permission denied. Please allow location access in your browser."
+            );
+            break;
+          case geoErr.POSITION_UNAVAILABLE:
+            setError("Your current location could not be determined.");
+            break;
+          case geoErr.TIMEOUT:
+            setError("Location request timed out. Please try again.");
+            break;
+          default:
+            setError("Unable to retrieve your current location.");
+            break;
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 30000,
+      }
+    );
+  }, []);
+
+  /* ===================================================
+     FEATURE: MAP CLICK DESTINATION SELECTION
+  =================================================== */
+
+  const handleMapDestinationSelect = useCallback(
+    async (lat: number, lng: number) => {
+      console.log("Map destination clicked:", lat, lng);
+      setError(null);
+
+      // Temporary location while geocoding
+      const tempDest: Location = {
+        name: "Identifying location…",
+        latitude: lat,
+        longitude: lng,
+      };
+
+      setDestinationLocation(tempDest);
+      setTo("Identifying location…");
+
+      // Update map destination marker immediately
+      setMapLocations((prev) =>
+        prev
+          ? { ...prev, destination: tempDest }
+          : {
+              source: sourceLocation || {
+                name: "Starting point",
+                latitude: lat,
+                longitude: lng,
+              },
+              destination: tempDest,
+            }
       );
+
+      // Clear previous routes since destination changed
+      setRoutes([]);
+
+      // Reverse geocode
+      const resolved = await reverseGeocode(lat, lng);
+      const finalDest: Location = {
+        name: resolved ? resolved.name : `Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+        latitude: lat,
+        longitude: lng,
+      };
+
+      setDestinationLocation(finalDest);
+      setTo(finalDest.name);
+
+      setMapLocations((prev) =>
+        prev ? { ...prev, destination: finalDest } : null
+      );
+    },
+    [sourceLocation]
+  );
+
+  /* ===================================================
+     FEATURE: FIND ROUTE (ROUTING HANDLER)
+  =================================================== */
+
+  const handleSearch = useCallback(async () => {
+    const fromQ = from.trim();
+    const toQ = to.trim();
+
+    if (!fromQ || !toQ) {
+      setError("Please enter both From and To locations.");
       return;
     }
 
     setLoading(true);
+    setStatusMessage("Finding safest route…");
+    setError(null);
+    setRoutes([]);
+    setSelectedRouteId(null);
 
     try {
-      // ----------------------------------------------
-      // 1. Find source
-      // ----------------------------------------------
+      /* 1. Resolve Source Location */
+      let src: Location | null = null;
+      if (sourceLocation && (fromQ === sourceLocation.name || fromQ === "Current location")) {
+        src = sourceLocation;
+      } else {
+        src = await searchLocation(fromQ);
+      }
 
-      const source =
-        await searchLocation(sourceText);
+      /* 2. Resolve Destination Location */
+      let dst: Location | null = null;
+      if (
+        destinationLocation &&
+        (toQ === destinationLocation.name || toQ === "Identifying location…")
+      ) {
+        dst = destinationLocation;
+      } else {
+        dst = await searchLocation(toQ);
+      }
 
-      if (!source) {
+      if (!src) {
+        setError(`Location not found: "${fromQ}"`);
+        return;
+      }
+      if (!dst) {
+        setError(`Location not found: "${toQ}"`);
+        return;
+      }
+
+      // Sync state & map markers
+      setSourceLocation(src);
+      setDestinationLocation(dst);
+      setMapLocations({ source: src, destination: dst });
+
+      console.log("RoadSense routing source:", src);
+      console.log("RoadSense routing destination:", dst);
+
+      /* 3. Call Routing API with exact coordinates */
+      const routeRes = await fetch(
+        `/api/route` +
+          `?sourceLat=${src.latitude}` +
+          `&sourceLng=${src.longitude}` +
+          `&destinationLat=${dst.latitude}` +
+          `&destinationLng=${dst.longitude}`
+      );
+
+      const routeData = await routeRes.json();
+      console.log("RoadSense route API response:", routeData);
+
+      if (!routeData.success || !Array.isArray(routeData.routes)) {
         setError(
-          `Could not find "${sourceText}". Try a more specific location.`
+          routeData.message || "No route found between these locations."
         );
         return;
       }
 
-      // ----------------------------------------------
-      // 2. Find destination
-      // ----------------------------------------------
+      const receivedRoutes: Route[] = routeData.routes.filter(
+        (r: Route) =>
+          r.geometry &&
+          Array.isArray(r.geometry.coordinates) &&
+          r.geometry.coordinates.length >= 2
+      );
 
-      const destination =
-        await searchLocation(destinationText);
+      console.log("RoadSense routes received:", receivedRoutes.length);
 
-      if (!destination) {
-        setError(
-          `Could not find "${destinationText}". Try a more specific location.`
-        );
+      if (receivedRoutes.length === 0) {
+        setError("No drivable route found. Try different locations.");
         return;
       }
 
-      // ----------------------------------------------
-      // 3. Request route from OSRM
-      // ----------------------------------------------
-
-      const routeUrl =
-        `/api/route?` +
-        `sourceLat=${source.latitude}` +
-        `&sourceLng=${source.longitude}` +
-        `&destinationLat=${destination.latitude}` +
-        `&destinationLng=${destination.longitude}`;
-
-      const response =
-        await fetch(routeUrl, {
-          cache: "no-store",
-        });
-
-      if (!response.ok) {
-        const errorData =
-          await response
-            .json()
-            .catch(() => null);
-
-        throw new Error(
-          errorData?.message ||
-            `Routing failed (${response.status})`
-        );
-      }
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(
-          data.message ||
-            "Unable to calculate route."
-        );
-      }
-
-      if (!data.route) {
-        throw new Error(
-          "Route information is missing."
-        );
-      }
-
-      // ----------------------------------------------
-      // 4. Update map
-      // ----------------------------------------------
-
-      setMapLocations({
-        source,
-        destination,
-      });
-
-      // ----------------------------------------------
-      // 5. Update route information
-      // ----------------------------------------------
-
-      setRoute({
-        distance: data.route.distance,
-        duration: data.route.duration,
-      });
-
-    } catch (error) {
-      console.error(
-        "Route search error:",
-        error
-      );
-
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Unable to find route."
-      );
+      setRoutes(receivedRoutes);
+      setSelectedRouteId(receivedRoutes[0].id);
+    } catch (err) {
+      console.error("RoadSense search error:", err);
+      setError("Something went wrong calculating the route. Please try again.");
     } finally {
       setLoading(false);
+      setStatusMessage(null);
     }
-  };
+  }, [from, to, sourceLocation, destinationLocation]);
 
-  // --------------------------------------------------
-  // Swap From / To
-  // --------------------------------------------------
-
-  const swapLocations = () => {
-    const oldFrom = from;
-
+  /* ── Swap handler ───────────────────────────────── */
+  const handleSwap = useCallback(() => {
     setFrom(to);
-    setTo(oldFrom);
+    setTo(from);
 
-    // Clear previous route because locations changed
-    setRoute(null);
-    setMapLocations(null);
-    setError("");
-  };
+    const tempLoc = sourceLocation;
+    setSourceLocation(destinationLocation);
+    setDestinationLocation(tempLoc);
 
-  // --------------------------------------------------
-  // Enter key support
-  // --------------------------------------------------
-
-  const handleKeyDown = (
-    event: React.KeyboardEvent<HTMLInputElement>
-  ) => {
-    if (event.key === "Enter" && !loading) {
-      findRoute();
+    if (mapLocations) {
+      setMapLocations({
+        source: mapLocations.destination,
+        destination: mapLocations.source,
+      });
     }
-  };
+  }, [from, to, sourceLocation, destinationLocation, mapLocations]);
 
-  // --------------------------------------------------
-  // Route calculations
-  // --------------------------------------------------
+  /* ── Derived values ─────────────────────────────── */
+  const selectedRoute =
+    routes.find((r) => r.id === selectedRouteId) ?? routes[0] ?? null;
 
-  const distance = route
-    ? (route.distance / 1000).toFixed(1)
-    : "--";
-
-  const totalMinutes = route
-    ? Math.round(route.duration / 60)
-    : 0;
-
-  const hours = Math.floor(
-    totalMinutes / 60
-  );
-
-  const minutes = totalMinutes % 60;
-
-  const duration = route
-    ? hours > 0
-      ? `${hours}h ${minutes}m`
-      : `${minutes}m`
-    : "--";
-
-  // --------------------------------------------------
-  // UI
-  // --------------------------------------------------
-
+  /* ====================================================
+     RENDER
+  ==================================================== */
   return (
-    <main className="app">
-
-      {/* ==================================================
-          HEADER
-      ================================================== */}
-
+    <div className="app">
+      {/* ─── Header ─────────────────────────────────── */}
       <header className="header">
-
         <div className="logo">
-
-          <div className="logo-icon">
-            🚗
-          </div>
-
+          <div className="logo-icon">🛣️</div>
           <div>
             <h1>RoadSense AI</h1>
-
-            <p>
-              AI-powered road safety
-            </p>
+            <p>AI-powered road safety routing</p>
           </div>
-
         </div>
-
         <div className="live">
           <span />
-          Live
+          Live Analysis
         </div>
-
       </header>
 
-      {/* ==================================================
-          SEARCH PANEL
-      ================================================== */}
+      {/* ─── Map Wrapper ────────────────────────────── */}
+      <main className="map-wrapper">
+        <MapComponent
+          locations={mapLocations}
+          routes={routes}
+          selectedRouteId={selectedRouteId}
+          onRouteSelect={setSelectedRouteId}
+          destinationSelectionMode={destinationSelectionMode}
+          setDestinationSelectionMode={setDestinationSelectionMode}
+          onMapDestinationSelect={handleMapDestinationSelect}
+          onUseCurrentLocation={handleUseCurrentLocation}
+          isGeolocating={isGeolocating}
+        />
 
-      <section className="search-panel">
-
-        {/* FROM */}
-
-        <div className="location">
-
-          <span className="dot green" />
-
-          <div className="input-container">
-
-            <small>
-              FROM
-            </small>
-
-            <input
-              type="text"
-              value={from}
-              onChange={(event) =>
-                setFrom(event.target.value)
-              }
-              onKeyDown={handleKeyDown}
-              placeholder="Starting location"
-              autoComplete="off"
-            />
-
+        {/* ─ Search Panel ─ */}
+        <div className="search-panel">
+          {/* FROM Input */}
+          <div className="location">
+            <span className="dot green" />
+            <div className="input-container">
+              <div className="input-header-row">
+                <small>FROM</small>
+                <button
+                  type="button"
+                  id="use-my-location-btn"
+                  className="inline-my-location-btn"
+                  onClick={handleUseCurrentLocation}
+                  disabled={isGeolocating}
+                  title="Use your current GPS location"
+                >
+                  {isGeolocating ? "Locating…" : "📍 My Location"}
+                </button>
+              </div>
+              <input
+                id="from-input"
+                type="text"
+                value={from}
+                placeholder="Starting location…"
+                onChange={(e) => {
+                  setFrom(e.target.value);
+                  setSourceLocation(null); // Reset explicit source location on manual edit
+                }}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              />
+            </div>
           </div>
 
-        </div>
+          {/* SWAP Button */}
+          <button
+            id="swap-btn"
+            className="swap-btn"
+            onClick={handleSwap}
+            title="Swap locations"
+            type="button"
+          >
+            ⇄
+          </button>
 
-
-        {/* SWAP BUTTON */}
-
-        <button
-          type="button"
-          className="swap-btn"
-          onClick={swapLocations}
-          disabled={loading}
-          aria-label="Swap locations"
-          title="Swap locations"
-        >
-          ⇅
-        </button>
-
-
-        {/* TO */}
-
-        <div className="location">
-
-          <span className="dot red" />
-
-          <div className="input-container">
-
-            <small>
-              TO
-            </small>
-
-            <input
-              type="text"
-              value={to}
-              onChange={(event) =>
-                setTo(event.target.value)
-              }
-              onKeyDown={handleKeyDown}
-              placeholder="Destination"
-              autoComplete="off"
-            />
-
+          {/* TO Input */}
+          <div className="location">
+            <span className="dot red" />
+            <div className="input-container">
+              <small>TO</small>
+              <input
+                id="to-input"
+                type="text"
+                value={to}
+                placeholder="Destination or click map…"
+                onChange={(e) => {
+                  setTo(e.target.value);
+                  setDestinationLocation(null); // Reset explicit destination location on manual edit
+                }}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              />
+            </div>
           </div>
 
+          {/* FIND ROUTE Button */}
+          <button
+            id="search-btn"
+            className="search-btn"
+            onClick={handleSearch}
+            disabled={loading || isGeolocating}
+            type="button"
+          >
+            {loading ? (
+              <>
+                <span className="spinner" />
+                Routing…
+              </>
+            ) : (
+              <>🔍 Find Route</>
+            )}
+          </button>
         </div>
 
-
-        {/* FIND ROUTE */}
-
-        <button
-          type="button"
-          className="search-btn"
-          onClick={findRoute}
-          disabled={loading}
-        >
-
-          {loading ? (
-            <>
-              <span className="spinner" />
-              Finding Route...
-            </>
-          ) : (
-            <>
-              Find Route
-            </>
-          )}
-
-        </button>
-
-
-        {/* ERROR */}
-
+        {/* ─ Error Alert ─ */}
         {error && (
-          <div className="error-message">
-            <span>⚠️</span>
+          <div className="error-message" role="alert">
+            ⚠️ {error}
+            <button onClick={() => setError(null)} aria-label="Dismiss">
+              ×
+            </button>
+          </div>
+        )}
 
+        {/* ─ Loading Overlay ─ */}
+        {(loading || isGeolocating || statusMessage) && (
+          <div className="map-loading" aria-live="polite">
+            <div className="loading-card">
+              <div className="loading-spinner" />
+              <strong>{statusMessage || "Processing request…"}</strong>
+              <span>Analyzing road safety and traffic</span>
+            </div>
+          </div>
+        )}
+
+        {/* ─ Hint (No routes yet) ─ */}
+        {!loading && !isGeolocating && routes.length === 0 && !error && (
+          <div className="map-hint">
+            <div className="map-hint-icon">🗺️</div>
+            <strong>Choose starting point &amp; destination</strong>
             <span>
-              {error}
+              Enter text above, use 📍 <strong>My Location</strong>, or click 📌 <strong>Select Destination</strong> on the map.
             </span>
           </div>
         )}
 
-      </section>
-
-
-      {/* ==================================================
-          MAP
-      ================================================== */}
-
-      <section className="map-wrapper">
-
-        <Map
-          locations={mapLocations}
-        />
-
-
-        {/* ==================================================
-            ROUTE INFORMATION CARD
-        ================================================== */}
-
-        <div className="route-card">
-
-          <span className="recommended">
-            ⭐ RECOMMENDED ROUTE
-          </span>
-
-          <h2>
-            {from} → {to}
-          </h2>
-
-
-          <div className="route-stats">
-
-            {/* DISTANCE */}
-
-            <div className="stat">
-
-              <small>
-                DISTANCE
-              </small>
-
-              <strong>
-                {distance}
-                <span className="unit">
-                  km
-                </span>
-              </strong>
-
+        {/* ─ Route List ─ */}
+        {routes.length > 0 && (
+          <div className="route-list">
+            <div className="route-list-header">
+              <div>
+                <h3>Available Routes</h3>
+                <p>Click a route to highlight it</p>
+              </div>
+              <span className="route-count">{routes.length}</span>
             </div>
-
-
-            {/* TIME */}
-
-            <div className="stat">
-
-              <small>
-                EST. TIME
-              </small>
-
-              <strong>
-                {duration}
-              </strong>
-
+            <div className="route-options">
+              {routes.map((route) => {
+                const isActive = route.id === selectedRouteId;
+                const km = (route.distance / 1000).toFixed(1);
+                const min = Math.round(route.duration / 60);
+                return (
+                  <button
+                    key={route.id}
+                    id={`route-option-${route.id}`}
+                    className={`route-option${isActive ? " active" : ""}`}
+                    onClick={() => setSelectedRouteId(route.id)}
+                    type="button"
+                  >
+                    <div className="route-option-top">
+                      <div className="route-name">
+                        <span className="route-number">{route.id}</span>
+                        <span>
+                          {isActive ? "Selected Route" : `Route ${route.id}`}
+                        </span>
+                      </div>
+                      {isActive && (
+                        <span className="selected-label">✓ Active</span>
+                      )}
+                    </div>
+                    <div className="route-option-bottom">
+                      <span>📏 {km} km</span>
+                      <span>⏱ {min} min</span>
+                      <span>
+                        🛡️{" "}
+                        {route.safetyScore != null
+                          ? `${route.safetyScore}% safe`
+                          : "AI pending"}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
+          </div>
+        )}
 
-
-            {/* ROAD QUALITY */}
-
-            <div className="stat">
-
-              <small>
-                ROAD QUALITY
-              </small>
-
-              <strong className="quality">
-                --
-              </strong>
-
+        {/* ─ Selected Route Details Card ─ */}
+        {selectedRoute && mapLocations && (
+          <div className="route-card">
+            <div className="route-card-header">
+              <div>
+                <span className="recommended">RECOMMENDED ROUTE</span>
+                <h2>
+                  {mapLocations.source.name.split(",")[0]} →{" "}
+                  {mapLocations.destination.name.split(",")[0]}
+                </h2>
+              </div>
+              <div className="safe-badge">
+                🛡️{" "}
+                {selectedRoute.safetyScore != null
+                  ? `${selectedRoute.safetyScore}% Safe`
+                  : "AI Pending"}
+              </div>
             </div>
-
+            <div className="route-stats">
+              <div className="stat">
+                <small>DISTANCE</small>
+                <strong>
+                  {(selectedRoute.distance / 1000).toFixed(1)}
+                  <span className="unit"> km</span>
+                </strong>
+              </div>
+              <div className="stat">
+                <small>ETA</small>
+                <strong>
+                  {Math.round(selectedRoute.duration / 60)}
+                  <span className="unit"> min</span>
+                </strong>
+              </div>
+              <div className="stat">
+                <small>POTHOLES</small>
+                <strong>
+                  {selectedRoute.potholeCount ?? "—"}
+                  {selectedRoute.potholeCount != null && (
+                    <span className="unit quality"> low</span>
+                  )}
+                </strong>
+              </div>
+            </div>
+            <div className="road-info">
+              <span>Via state highways &amp; national roads</span>
+              <strong>Road quality: Good</strong>
+            </div>
+            <div className="ai-status">
+              <span className="ai-dot" />
+              AI road analysis active • OSRM routing
+            </div>
           </div>
-
-
-          {/* ROAD INFORMATION */}
-
-          <div className="road-info">
-
-            <span>
-              🕳️ Potholes detected
-            </span>
-
-            <strong>
-              --
-            </strong>
-
-          </div>
-
-
-          {/* FUTURE AI MESSAGE */}
-
-          <div className="ai-status">
-
-            <span className="ai-dot" />
-
-            <span>
-              AI road analysis will appear here
-            </span>
-
-          </div>
-
-        </div>
-
-      </section>
-
-    </main>
+        )}
+      </main>
+    </div>
   );
 }

@@ -1,500 +1,441 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+/*
+ * Map.tsx — Leaflet / react-leaflet map component for RoadSense AI
+ * Supports:
+ *  - Route polylines & selection
+ *  - Custom SVG markers (Source, Destination, Current Location)
+ *  - Map click destination selection mode
+ *  - Map controls for "Select Destination" and "My Location"
+ */
+
+import { useEffect } from "react";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  Polyline,
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
+import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+/* =====================================================
+   LEAFLET ICON FIX FOR NEXT.JS / WEBPACK
+===================================================== */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+/* =====================================================
+   CUSTOM SVG MARKER ICONS
+===================================================== */
+function makePin(color: string, label: string = ""): L.DivIcon {
+  const svg = `
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="28"
+      height="40"
+      viewBox="0 0 28 40"
+    >
+      <path
+        d="M14 0C6.268 0 0 6.268 0 14c0 10.5 14 26 14 26S28 24.5 28 14C28 6.268 21.732 0 14 0z"
+        fill="${color}"
+        stroke="white"
+        stroke-width="2"
+      />
+      <circle cx="14" cy="14" r="5" fill="white" />
+    </svg>
+  `;
+  return L.divIcon({
+    className: "",
+    html: svg,
+    iconSize: [28, 40],
+    iconAnchor: [14, 40],
+    popupAnchor: [0, -42],
+  });
+}
+
+function makeCurrentLocationIcon(): L.DivIcon {
+  const svg = `
+    <div style="position: relative; width: 24px; height: 24px;">
+      <div style="
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: rgba(37, 99, 235, 0.25);
+        animation: pulse 2s infinite;
+      "></div>
+      <div style="
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #2563eb;
+        border: 3px solid white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      "></div>
+    </div>
+  `;
+  return L.divIcon({
+    className: "",
+    html: svg,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -14],
+  });
+}
+
+const SOURCE_ICON = makePin("#16a34a"); // green pin
+const CURRENT_LOC_ICON = makeCurrentLocationIcon(); // blue pulsing dot
+const DEST_ICON = makePin("#ef4444");   // red pin
+
+/* =====================================================
+   TYPES
+===================================================== */
 type Location = {
   name: string;
   latitude: number;
   longitude: number;
+  isCurrentLocation?: boolean;
+};
+
+type Route = {
+  id: number;
+  distance: number;
+  duration: number;
+  geometry: {
+    type?: "LineString";
+    coordinates: [number, number][]; // [longitude, latitude]
+  };
+  potholeCount?: number;
+  riskScore?: number;
+  safetyScore?: number;
 };
 
 type MapProps = {
-  locations: {
-    source: Location;
-    destination: Location;
-  } | null;
+  locations: { source: Location; destination: Location } | null;
+  routes: Route[];
+  selectedRouteId: number | null;
+  onRouteSelect: (id: number) => void;
+  destinationSelectionMode: boolean;
+  setDestinationSelectionMode: (active: boolean) => void;
+  onMapDestinationSelect: (lat: number, lng: number) => void;
+  onUseCurrentLocation: () => void;
+  isGeolocating?: boolean;
 };
 
-export default function Map({
+/* =====================================================
+   MAP EVENT HANDLER COMPONENT
+===================================================== */
+function MapEventsHandler({
+  destinationSelectionMode,
+  onMapDestinationSelect,
+  setDestinationSelectionMode,
+}: {
+  destinationSelectionMode: boolean;
+  onMapDestinationSelect: (lat: number, lng: number) => void;
+  setDestinationSelectionMode: (active: boolean) => void;
+}) {
+  const map = useMap();
+
+  /* Toggle cursor class on map container when mode changes */
+  useEffect(() => {
+    const container = map.getContainer();
+    if (destinationSelectionMode) {
+      container.classList.add("selecting-destination-cursor");
+    } else {
+      container.classList.remove("selecting-destination-cursor");
+    }
+  }, [map, destinationSelectionMode]);
+
+  useMapEvents({
+    click(e) {
+      if (!destinationSelectionMode) return;
+      const { lat, lng } = e.latlng;
+      console.log("RoadSense Map clicked at:", lat, lng);
+      onMapDestinationSelect(lat, lng);
+      setDestinationSelectionMode(false);
+    },
+  });
+
+  return null;
+}
+
+/* =====================================================
+   MAP VIEWPORT UPDATER
+===================================================== */
+function MapUpdater({
   locations,
-}: MapProps) {
-  const containerRef =
-    useRef<HTMLDivElement | null>(null);
-
-  const mapRef = useRef<any>(null);
-
-  const leafletRef = useRef<any>(null);
-
-  const routeLayerRef = useRef<any>(null);
-
-  const markerLayerRef = useRef<any>(null);
-
-  // --------------------------------------------------
-  // 1. INITIALIZE MAP
-  // --------------------------------------------------
+  routes,
+  selectedRouteId,
+}: Pick<MapProps, "locations" | "routes" | "selectedRouteId">) {
+  const map = useMap();
 
   useEffect(() => {
-    let cancelled = false;
+    if (!map) return;
 
-    const initializeMap = async () => {
-      if (
-        mapRef.current ||
-        !containerRef.current
-      ) {
-        return;
-      }
+    /* ── Case 1: Routes exist → fit to selected route ── */
+    const selected =
+      routes.find((r) => r.id === selectedRouteId) ?? routes[0];
 
-      try {
-        // Leaflet browser-side only
-        const L = await import("leaflet");
+    if (selected?.geometry?.coordinates?.length) {
+      const leafletPositions: [number, number][] =
+        selected.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
 
-        if (
-          cancelled ||
-          !containerRef.current ||
-          mapRef.current
-        ) {
-          return;
-        }
+      const bounds = L.latLngBounds(leafletPositions);
 
-        leafletRef.current = L;
-
-        // --------------------------------------------
-        // Create map
-        // --------------------------------------------
-
-        const map = L.map(
-          containerRef.current
-        ).setView(
-          [21.18, 75.20],
-          9
-        );
-
-        mapRef.current = map;
-
-        // --------------------------------------------
-        // CARTO Light Tiles
-        // --------------------------------------------
-
-        L.tileLayer(
-          "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-          {
-            attribution:
-              "&copy; OpenStreetMap contributors &copy; CARTO",
-
-            subdomains:
-              "abcd",
-
-            maxZoom: 20,
-          }
-        ).addTo(map);
-
-        console.log(
-          "Leaflet map initialized"
-        );
-
-      } catch (error) {
-        console.error(
-          "Map initialization error:",
-          error
-        );
-      }
-    };
-
-    initializeMap();
-
-    // --------------------------------------------
-    // Cleanup
-    // --------------------------------------------
-
-    return () => {
-      cancelled = true;
-
-      if (mapRef.current) {
-        mapRef.current.remove();
-
-        mapRef.current = null;
-      }
-
-      leafletRef.current = null;
-
-      routeLayerRef.current = null;
-
-      markerLayerRef.current = null;
-    };
-  }, []);
-
-  // --------------------------------------------------
-  // 2. UPDATE ROUTE WHEN LOCATIONS CHANGE
-  // --------------------------------------------------
-
-  useEffect(() => {
-    if (!locations) {
+      map.fitBounds(bounds, {
+        padding: [60, 60],
+        maxZoom: 14,
+        animate: true,
+        duration: 1,
+      });
       return;
     }
 
-    const drawRoute = async () => {
-      try {
-        // Wait until Leaflet map is ready
-        if (
-          !mapRef.current ||
-          !leafletRef.current
-        ) {
-          return;
-        }
-
-        const L = leafletRef.current;
-
-        const map = mapRef.current;
-
-        // --------------------------------------------
-        // Source
-        // --------------------------------------------
-
-        const source: [
-          number,
-          number
-        ] = [
-          locations.source.latitude,
-          locations.source.longitude,
-        ];
-
-        // --------------------------------------------
-        // Destination
-        // --------------------------------------------
-
-        const destination: [
-          number,
-          number
-        ] = [
-          locations.destination.latitude,
-          locations.destination.longitude,
-        ];
-
-        console.log(
-          "New source:",
-          source
-        );
-
-        console.log(
-          "New destination:",
-          destination
-        );
-
-        // --------------------------------------------
-        // Remove old route
-        // --------------------------------------------
-
-        if (routeLayerRef.current) {
-          map.removeLayer(
-            routeLayerRef.current
-          );
-
-          routeLayerRef.current = null;
-        }
-
-        // --------------------------------------------
-        // Remove old markers
-        // --------------------------------------------
-
-        if (markerLayerRef.current) {
-          map.removeLayer(
-            markerLayerRef.current
-          );
-
-          markerLayerRef.current = null;
-        }
-
-        // --------------------------------------------
-        // Marker Layer
-        // --------------------------------------------
-
-        const markerLayer =
-          L.layerGroup().addTo(map);
-
-        markerLayerRef.current =
-          markerLayer;
-
-        // --------------------------------------------
-        // Source Marker
-        // --------------------------------------------
-
-        L.circleMarker(source, {
-          radius: 9,
-
-          color: "#166534",
-
-          fillColor: "#22c55e",
-
-          fillOpacity: 1,
-
-          weight: 3,
-        })
-          .addTo(markerLayer)
-          .bindPopup(`
-            <div style="font-size:14px">
-              <strong>Starting Point</strong>
-              <br/>
-              ${locations.source.name}
-            </div>
-          `);
-
-        // --------------------------------------------
-        // Destination Marker
-        // --------------------------------------------
-
-        L.circleMarker(destination, {
-          radius: 9,
-
-          color: "#991b1b",
-
-          fillColor: "#ef4444",
-
-          fillOpacity: 1,
-
-          weight: 3,
-        })
-          .addTo(markerLayer)
-          .bindPopup(`
-            <div style="font-size:14px">
-              <strong>Destination</strong>
-              <br/>
-              ${locations.destination.name}
-            </div>
-          `);
-
-        // --------------------------------------------
-        // Request Route
-        // --------------------------------------------
-
-        const url =
-          `/api/route?` +
-          `sourceLat=${source[0]}` +
-          `&sourceLng=${source[1]}` +
-          `&destinationLat=${destination[0]}` +
-          `&destinationLng=${destination[1]}`;
-
-        console.log(
-          "Requesting route:",
-          url
-        );
-
-        const response =
-          await fetch(url, {
-            cache: "no-store",
-          });
-
-        if (!response.ok) {
-          const errorData =
-            await response
-              .json()
-              .catch(() => null);
-
-          throw new Error(
-            errorData?.message ||
-              `Routing API failed: ${response.status}`
-          );
-        }
-
-        const data =
-          await response.json();
-
-        if (!data.success) {
-          throw new Error(
-            data.message ||
-              "Route not available"
-          );
-        }
-
-        // --------------------------------------------
-        // Route validation
-        // --------------------------------------------
-
-        const route =
-          data.route;
-
-        if (
-          !route ||
-          !route.geometry ||
-          !route.geometry.coordinates
-        ) {
-          throw new Error(
-            "Route geometry is missing"
-          );
-        }
-
-        // --------------------------------------------
-        // OSRM → Leaflet coordinates
-        //
-        // OSRM:
-        // [longitude, latitude]
-        //
-        // Leaflet:
-        // [latitude, longitude]
-        // --------------------------------------------
-
-        const routeCoordinates =
-          route.geometry.coordinates.map(
-            (
-              coordinate: [
-                number,
-                number
-              ]
-            ) => {
-              const [
-                longitude,
-                latitude,
-              ] = coordinate;
-
-              return [
-                latitude,
-                longitude,
-              ] as [
-                number,
-                number
-              ];
-            }
-          );
-
-        // --------------------------------------------
-        // Draw actual road route
-        // --------------------------------------------
-
-        const routeLine =
-          L.polyline(
-            routeCoordinates,
-            {
-              color: "#2563eb",
-
-              weight: 7,
-
-              opacity: 0.85,
-
-              lineCap: "round",
-
-              lineJoin: "round",
-            }
-          ).addTo(map);
-
-        routeLayerRef.current =
-          routeLine;
-
-        // --------------------------------------------
-        // Fit map to route
-        // --------------------------------------------
-
-        map.fitBounds(
-          routeLine.getBounds(),
-          {
-            padding: [
-              50,
-              50,
-            ],
-          }
-        );
-
-        // --------------------------------------------
-        // Distance
-        // --------------------------------------------
-
-        const distanceKm =
-          (
-            route.distance /
-            1000
-          ).toFixed(1);
-
-        // --------------------------------------------
-        // Duration
-        // --------------------------------------------
-
-        const durationMinutes =
-          Math.round(
-            route.duration /
-              60
-          );
-
-        const hours =
-          Math.floor(
-            durationMinutes /
-              60
-          );
-
-        const minutes =
-          durationMinutes %
-          60;
-
-        const timeText =
-          hours > 0
-            ? `${hours}h ${minutes}m`
-            : `${minutes}m`;
-
-        // --------------------------------------------
-        // Route Popup
-        // --------------------------------------------
-
-        routeLine.bindPopup(`
-          <div style="font-size:14px">
-
-            <strong>
-              ${locations.source.name}
-              →
-              ${locations.destination.name}
-            </strong>
-
-            <br/>
-            <br/>
-
-            Distance:
-            <strong>
-              ${distanceKm} km
-            </strong>
-
-            <br/>
-
-            Estimated Time:
-            <strong>
-              ${timeText}
-            </strong>
-
-          </div>
-        `);
-
-        console.log(
-          "Route distance:",
-          distanceKm,
-          "km"
-        );
-
-        console.log(
-          "Route duration:",
-          timeText
-        );
-
-        console.log(
-          "Routing provider:",
-          data.provider
-        );
-
-      } catch (error) {
-        console.error(
-          "Routing error:",
-          error
-        );
-      }
-    };
-
-    drawRoute();
-
-  }, [locations]);
-
-  // --------------------------------------------------
-  // 3. MAP CONTAINER
-  // --------------------------------------------------
+    /* ── Case 2: Source + destination locations exist ── */
+    if (locations?.source && locations?.destination) {
+      const bounds = L.latLngBounds([
+        [locations.source.latitude, locations.source.longitude],
+        [locations.destination.latitude, locations.destination.longitude],
+      ]);
+
+      map.fitBounds(bounds, {
+        padding: [100, 100],
+        maxZoom: 13,
+        animate: true,
+        duration: 0.8,
+      });
+      return;
+    }
+
+    /* ── Case 3: Only source location exists (e.g. current location) ── */
+    if (locations?.source) {
+      map.flyTo(
+        [locations.source.latitude, locations.source.longitude],
+        13,
+        { animate: true, duration: 1 }
+      );
+    }
+  }, [map, locations, routes, selectedRouteId]);
+
+  return null;
+}
+
+/* =====================================================
+   MAP CONTROLS OVERLAY
+===================================================== */
+function MapControls({
+  destinationSelectionMode,
+  setDestinationSelectionMode,
+  onUseCurrentLocation,
+  isGeolocating,
+}: {
+  destinationSelectionMode: boolean;
+  setDestinationSelectionMode: (active: boolean) => void;
+  onUseCurrentLocation: () => void;
+  isGeolocating?: boolean;
+}) {
+  return (
+    <div className="map-custom-controls">
+      {/* 📌 Select Destination Button */}
+      <button
+        type="button"
+        id="map-select-dest-btn"
+        className={`map-control-btn ${
+          destinationSelectionMode ? "active-dest-mode" : ""
+        }`}
+        onClick={() => setDestinationSelectionMode(!destinationSelectionMode)}
+        title="Click on map to select destination"
+      >
+        {destinationSelectionMode ? (
+          <>
+            <span className="pulse-dot-red" />
+            📌 Click map to set destination
+            <span className="cancel-badge">✕ Cancel</span>
+          </>
+        ) : (
+          <>📌 Select Destination</>
+        )}
+      </button>
+
+      {/* ◎ My Location Button */}
+      <button
+        type="button"
+        id="map-my-location-btn"
+        className="map-control-btn"
+        onClick={onUseCurrentLocation}
+        disabled={isGeolocating}
+        title="Center map on your current location"
+      >
+        {isGeolocating ? (
+          <>
+            <span className="spinner-sm" />
+            Locating…
+          </>
+        ) : (
+          <>◎ My Location</>
+        )}
+      </button>
+    </div>
+  );
+}
+
+/* =====================================================
+   MAIN MAP COMPONENT
+===================================================== */
+export default function Map({
+  locations,
+  routes,
+  selectedRouteId,
+  onRouteSelect,
+  destinationSelectionMode,
+  setDestinationSelectionMode,
+  onMapDestinationSelect,
+  onUseCurrentLocation,
+  isGeolocating,
+}: MapProps) {
+  const unselected = routes.filter((r) => r.id !== selectedRouteId);
+  const selected = routes.filter((r) => r.id === selectedRouteId);
 
   return (
-    <div
-      ref={containerRef}
-      className="map-container"
-    />
+    <div className="map-container-inner" style={{ width: "100%", height: "100%", position: "relative" }}>
+      <MapContainer
+        center={[21.15, 75.2]}
+        zoom={9}
+        style={{ width: "100%", height: "100%" }}
+        zoomControl={true}
+      >
+        {/* OSM tiles */}
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maxZoom={19}
+        />
+
+        {/* Viewport manager */}
+        <MapUpdater
+          locations={locations}
+          routes={routes}
+          selectedRouteId={selectedRouteId}
+        />
+
+        {/* Map Click Listener */}
+        <MapEventsHandler
+          destinationSelectionMode={destinationSelectionMode}
+          onMapDestinationSelect={onMapDestinationSelect}
+          setDestinationSelectionMode={setDestinationSelectionMode}
+        />
+
+        {/* Source Marker */}
+        {locations?.source && (
+          <Marker
+            position={[
+              locations.source.latitude,
+              locations.source.longitude,
+            ]}
+            icon={
+              locations.source.isCurrentLocation
+                ? CURRENT_LOC_ICON
+                : SOURCE_ICON
+            }
+          >
+            <Popup>
+              <strong>
+                {locations.source.isCurrentLocation
+                  ? "🔵 You Are Here"
+                  : "Starting Point"}
+              </strong>
+              <br />
+              <span>{locations.source.name}</span>
+            </Popup>
+          </Marker>
+        )}
+
+        {/* Destination Marker */}
+        {locations?.destination && (
+          <Marker
+            position={[
+              locations.destination.latitude,
+              locations.destination.longitude,
+            ]}
+            icon={DEST_ICON}
+          >
+            <Popup>
+              <strong>Destination</strong>
+              <br />
+              <span>{locations.destination.name}</span>
+            </Popup>
+          </Marker>
+        )}
+
+        {/* Unselected routes (rendered first = behind) */}
+        {unselected.map((route) => {
+          const positions: [number, number][] =
+            route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+
+          return (
+            <Polyline
+              key={route.id}
+              positions={positions}
+              pathOptions={{
+                color: "#64748b",
+                weight: 5,
+                opacity: 0.55,
+                lineCap: "round",
+                lineJoin: "round",
+              }}
+              eventHandlers={{
+                click: () => onRouteSelect(route.id),
+              }}
+            />
+          );
+        })}
+
+        {/* Selected route (rendered last = on top) */}
+        {selected.map((route) => {
+          const positions: [number, number][] =
+            route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+
+          return (
+            <Polyline
+              key={`sel-${route.id}`}
+              positions={positions}
+              pathOptions={{
+                color: "#2563eb",
+                weight: 8,
+                opacity: 1,
+                lineCap: "round",
+                lineJoin: "round",
+              }}
+              eventHandlers={{
+                click: () => onRouteSelect(route.id),
+              }}
+            />
+          );
+        })}
+      </MapContainer>
+
+      {/* Floating map controls */}
+      <MapControls
+        destinationSelectionMode={destinationSelectionMode}
+        setDestinationSelectionMode={setDestinationSelectionMode}
+        onUseCurrentLocation={onUseCurrentLocation}
+        isGeolocating={isGeolocating}
+      />
+    </div>
   );
 }

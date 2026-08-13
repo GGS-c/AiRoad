@@ -6,252 +6,1196 @@ html,
 body {
   margin: 0;
   padding: 0;
-  font-family: Arial, Helvetica, sans-serif;
-  background: #f5f7fa;
+  width: 100%;
+  height: 100%;
 }
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  background: #f5f7fb;
+  color: #111827;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* =====================================================
+   APP
+===================================================== */
 
 .app {
-  min-height: 100vh;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
 }
 
-/* Header */
+/* =====================================================
+   HEADER
+===================================================== */
 
 .header {
-  height: 72px;
-  background: white;
+  height: 76px;
+  width: 100%;
+  background: #ffffff;
+
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 32px;
+
+  padding: 0 30px;
+
   border-bottom: 1px solid #e5e7eb;
+
+  position: relative;
+  z-index: 1000;
 }
 
 .logo {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .logo-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: #111827;
+  width: 48px;
+  height: 48px;
+
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 21px;
+
+  border-radius: 14px;
+
+  background: #eff6ff;
+
+  font-size: 25px;
 }
 
 .logo h1 {
   margin: 0;
-  font-size: 20px;
-  color: #111827;
+
+  font-size: 22px;
+  font-weight: 800;
+
+  letter-spacing: -0.4px;
 }
 
 .logo p {
-  margin: 2px 0 0;
-  font-size: 12px;
+  margin: 3px 0 0;
+
   color: #6b7280;
+
+  font-size: 13px;
 }
 
 .live {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 12px;
-  border-radius: 20px;
+  gap: 8px;
+
+  padding: 9px 16px;
+
+  border-radius: 999px;
+
   background: #ecfdf5;
-  color: #047857;
-  font-size: 13px;
-  font-weight: 600;
+
+  color: #059669;
+
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .live span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #10b981;
-}
+  width: 9px;
+  height: 9px;
 
-/* Search */
-
-.search-panel {
-  position: absolute;
-  z-index: 1000;
-  top: 92px;
-  left: 32px;
-
-  background: white;
-  width: 390px;
-  padding: 16px;
-
-  border-radius: 16px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-}
-
-.location {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-
-  padding: 10px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.location small {
-  display: block;
-  font-size: 9px;
-  color: #9ca3af;
-  font-weight: 700;
-}
-
-.location strong {
-  display: block;
-  margin-top: 2px;
-  color: #111827;
-}
-
-.dot {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-}
-
-.green {
   background: #22c55e;
+
+  border-radius: 50%;
+
+  box-shadow: 0 0 0 4px #dcfce7;
 }
 
-.red {
-  background: #ef4444;
-}
-
-.search-btn {
-  width: 100%;
-  margin-top: 12px;
-
-  border: none;
-  border-radius: 10px;
-  padding: 11px;
-
-  background: #111827;
-  color: white;
-
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.search-btn:hover {
-  background: #1f2937;
-}
-
-/* Map */
+/* =====================================================
+   MAP WRAPPER
+===================================================== */
 
 .map-wrapper {
   position: relative;
+
   width: 100%;
+
+  height: calc(100vh - 76px);
+
+  overflow: hidden;
+
+  background: #e5e7eb;
 }
 
-.map-container {
-  width: 100%;
-  height: calc(100vh - 72px);
-  min-height: 650px;
-}
+/* =====================================================
+   SEARCH PANEL
+===================================================== */
 
-/* Route Card */
-
-.route-card {
+.search-panel {
   position: absolute;
-  z-index: 1000;
 
-  left: 32px;
-  bottom: 30px;
+  top: 24px;
+  left: 24px;
 
-  width: 430px;
+  z-index: 900;
 
-  background: white;
+  width: 580px;
+
+  padding: 12px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 8px;
+
+  background: rgba(255, 255, 255, 0.97);
+
+  border: 1px solid rgba(229, 231, 235, 0.9);
+
   border-radius: 18px;
 
-  padding: 20px;
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.12),
+    0 2px 6px rgba(0, 0, 0, 0.05);
 
-  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(12px);
 }
 
-.recommended {
-  font-size: 10px;
-  font-weight: 800;
-  color: #16a34a;
-  letter-spacing: 0.5px;
+/* =====================================================
+   LOCATION
+===================================================== */
+
+.location {
+  flex: 1;
+
+  min-width: 0;
+
+  height: 62px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 10px;
+
+  padding: 8px 12px;
+
+  border: 1px solid #e5e7eb;
+
+  border-radius: 12px;
+
+  background: #ffffff;
 }
 
-.route-card h2 {
-  margin: 5px 0 18px;
-  font-size: 20px;
-  color: #111827;
+.dot {
+  flex: 0 0 auto;
+
+  width: 12px;
+  height: 12px;
+
+  border-radius: 50%;
 }
 
-.route-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+.dot.green {
+  background: #22c55e;
+
+  box-shadow:
+    0 0 0 4px #dcfce7;
 }
 
-.route-stats small {
+.dot.red {
+  background: #ef4444;
+
+  box-shadow:
+    0 0 0 4px #fee2e2;
+}
+
+.input-container {
+  min-width: 0;
+
+  flex: 1;
+}
+
+.input-container small {
   display: block;
+
+  margin-bottom: 3px;
+
   color: #9ca3af;
+
   font-size: 9px;
+
+  font-weight: 800;
+
+  letter-spacing: 0.8px;
+}
+
+.input-container input {
+  width: 100%;
+
+  border: 0;
+  outline: 0;
+
+  background: transparent;
+
+  color: #111827;
+
+  font-size: 15px;
+
+  font-weight: 600;
+
+  text-overflow: ellipsis;
+}
+
+/* =====================================================
+   SWAP
+===================================================== */
+
+.swap-btn {
+  width: 38px;
+  height: 38px;
+
+  flex: 0 0 auto;
+
+  border: 1px solid #e5e7eb;
+
+  border-radius: 50%;
+
+  background: #ffffff;
+
+  color: #2563eb;
+
+  font-size: 20px;
+
+  transition:
+    transform 0.2s,
+    background 0.2s;
+}
+
+.swap-btn:hover {
+  background: #eff6ff;
+
+  transform: rotate(180deg);
+}
+
+/* =====================================================
+   SEARCH BUTTON
+===================================================== */
+
+.search-btn {
+  height: 62px;
+
+  min-width: 140px;
+
+  border: 0;
+
+  border-radius: 12px;
+
+  background: #2563eb;
+
+  color: white;
+
+  font-size: 14px;
+
+  font-weight: 700;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 7px;
+
+  transition:
+    background 0.2s,
+    transform 0.15s;
+}
+
+.search-btn:hover {
+  background: #1d4ed8;
+}
+
+.search-btn:active {
+  transform: scale(0.98);
+}
+
+.search-btn:disabled {
+  opacity: 0.7;
+
+  cursor: wait;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+
+  border: 2px solid rgba(255, 255, 255, 0.4);
+
+  border-top-color: white;
+
+  border-radius: 50%;
+
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =====================================================
+   ERROR
+===================================================== */
+
+.error-message {
+  position: absolute;
+
+  top: 104px;
+  left: 24px;
+
+  z-index: 950;
+
+  max-width: 560px;
+
+  padding: 12px 14px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 10px;
+
+  background: #fff7ed;
+
+  border: 1px solid #fed7aa;
+
+  color: #9a3412;
+
+  border-radius: 12px;
+
+  box-shadow:
+    0 8px 25px rgba(0, 0, 0, 0.08);
+
+  font-size: 13px;
+
+  font-weight: 600;
+}
+
+.error-message button {
+  border: 0;
+
+  background: transparent;
+
+  color: #9a3412;
+
+  font-size: 20px;
+
+  margin-left: 5px;
+}
+
+/* =====================================================
+   AVAILABLE ROUTES
+===================================================== */
+
+.route-list {
+  position: absolute;
+
+  top: 24px;
+  right: 24px;
+
+  z-index: 900;
+
+  width: 320px;
+
+  padding: 16px;
+
+  background: rgba(255, 255, 255, 0.97);
+
+  border-radius: 18px;
+
+  border: 1px solid rgba(229, 231, 235, 0.9);
+
+  box-shadow:
+    0 12px 35px rgba(0, 0, 0, 0.13);
+
+  backdrop-filter: blur(12px);
+}
+
+.route-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  margin-bottom: 12px;
+}
+
+.route-list-header h3 {
+  margin: 0;
+
+  font-size: 16px;
+
+  font-weight: 800;
+}
+
+.route-list-header p {
+  margin: 3px 0 0;
+
+  color: #9ca3af;
+
+  font-size: 11px;
+}
+
+.route-count {
+  width: 28px;
+  height: 28px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+
+  background: #eff6ff;
+
+  color: #2563eb;
+
+  font-size: 12px;
+
+  font-weight: 800;
+}
+
+.route-options {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 8px;
+
+  max-height: 350px;
+
+  overflow-y: auto;
+}
+
+.route-option {
+  width: 100%;
+
+  padding: 12px;
+
+  border: 1px solid #e5e7eb;
+
+  border-radius: 12px;
+
+  background: #ffffff;
+
+  text-align: left;
+
+  transition:
+    border 0.2s,
+    background 0.2s,
+    box-shadow 0.2s;
+}
+
+.route-option:hover {
+  border-color: #93c5fd;
+
+  background: #f8fbff;
+}
+
+.route-option.active {
+  border-color: #2563eb;
+
+  background: #eff6ff;
+
+  box-shadow:
+    0 3px 12px rgba(37, 99, 235, 0.12);
+}
+
+.route-option-top {
+  display: flex;
+
+  align-items: center;
+  justify-content: space-between;
+
+  margin-bottom: 8px;
+
+  color: #111827;
+
+  font-size: 14px;
+}
+
+.route-name {
+  display: flex;
+
+  align-items: center;
+
+  gap: 8px;
+}
+
+.route-number {
+  width: 24px;
+  height: 24px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+
+  background: #dbeafe;
+
+  color: #2563eb;
+
+  font-size: 11px;
+
+  font-weight: 800;
+}
+
+.route-option-bottom {
+  display: flex;
+
+  align-items: center;
+
+  gap: 12px;
+
+  color: #6b7280;
+
+  font-size: 11px;
+}
+
+.selected-label {
+  margin-left: auto;
+
+  color: #2563eb;
+
   font-weight: 700;
 }
 
-.route-stats strong {
+/* =====================================================
+   SELECTED ROUTE CARD
+===================================================== */
+
+.route-card {
+  position: absolute;
+
+  left: 24px;
+  bottom: 24px;
+
+  z-index: 900;
+
+  width: 480px;
+
+  padding: 18px;
+
+  background: rgba(255, 255, 255, 0.98);
+
+  border-radius: 18px;
+
+  border: 1px solid rgba(229, 231, 235, 0.9);
+
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.15);
+
+  backdrop-filter: blur(12px);
+}
+
+.route-card-header {
+  display: flex;
+
+  align-items: flex-start;
+
+  justify-content: space-between;
+
+  gap: 15px;
+}
+
+.recommended {
   display: block;
-  margin-top: 5px;
+
+  margin-bottom: 6px;
+
+  color: #2563eb;
+
+  font-size: 11px;
+
+  font-weight: 800;
+
+  letter-spacing: 0.6px;
+}
+
+.route-card h2 {
+  margin: 0;
+
   color: #111827;
+
+  font-size: 19px;
+
+  line-height: 1.3;
+}
+
+.safe-badge {
+  flex: 0 0 auto;
+
+  padding: 7px 10px;
+
+  border-radius: 10px;
+
+  background: #ecfdf5;
+
+  color: #059669;
+
+  font-size: 12px;
+
+  font-weight: 800;
+}
+
+/* =====================================================
+   STATS
+===================================================== */
+
+.route-stats {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, 1fr);
+
+  gap: 8px;
+
+  margin-top: 16px;
+}
+
+.stat {
+  padding: 11px;
+
+  border-radius: 10px;
+
+  background: #f8fafc;
+}
+
+.stat small {
+  display: block;
+
+  margin-bottom: 5px;
+
+  color: #64748b;
+
+  font-size: 9px;
+
+  font-weight: 800;
+
+  letter-spacing: 0.5px;
+}
+
+.stat strong {
+  color: #111827;
+
   font-size: 16px;
 }
 
-.quality {
-  color: #16a34a !important;
+.stat .unit {
+  margin-left: 3px;
+
+  color: #64748b;
+
+  font-size: 11px;
 }
 
-.road-info {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid #eee;
+.stat .quality {
+  color: #059669;
+}
 
+/* =====================================================
+   ROAD INFO
+===================================================== */
+
+.road-info {
   display: flex;
+
+  align-items: center;
+
   justify-content: space-between;
 
-  font-size: 13px;
+  margin-top: 12px;
+
+  padding-top: 12px;
+
+  border-top: 1px solid #e5e7eb;
+
   color: #4b5563;
+
+  font-size: 13px;
 }
 
 .road-info strong {
   color: #111827;
 }
 
-/* Mobile */
+/* =====================================================
+   AI STATUS
+===================================================== */
 
-@media (max-width: 700px) {
+.ai-status {
+  display: flex;
+
+  align-items: center;
+
+  gap: 8px;
+
+  margin-top: 10px;
+
+  color: #64748b;
+
+  font-size: 11px;
+}
+
+.ai-dot {
+  width: 7px;
+  height: 7px;
+
+  border-radius: 50%;
+
+  background: #22c55e;
+
+  box-shadow:
+    0 0 0 4px #dcfce7;
+}
+
+/* =====================================================
+   MAP HINT
+===================================================== */
+
+.map-hint {
+  position: absolute;
+
+  left: 50%;
+  top: 50%;
+
+  transform: translate(-50%, -50%);
+
+  z-index: 700;
+
+  width: 270px;
+
+  padding: 22px;
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+
+  text-align: center;
+
+  gap: 6px;
+
+  background: rgba(255, 255, 255, 0.94);
+
+  border-radius: 16px;
+
+  box-shadow:
+    0 12px 35px rgba(0, 0, 0, 0.1);
+
+  backdrop-filter: blur(10px);
+}
+
+.map-hint-icon {
+  font-size: 28px;
+
+  margin-bottom: 3px;
+}
+
+.map-hint strong {
+  font-size: 15px;
+}
+
+.map-hint span {
+  color: #6b7280;
+
+  font-size: 12px;
+
+  line-height: 1.5;
+}
+
+/* =====================================================
+   LOADING
+===================================================== */
+
+.map-loading {
+  position: absolute;
+
+  inset: 0;
+
+  z-index: 1100;
+
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  pointer-events: none;
+}
+
+.loading-card {
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+
+  gap: 8px;
+
+  padding: 22px 30px;
+
+  background: rgba(255, 255, 255, 0.96);
+
+  border-radius: 16px;
+
+  box-shadow:
+    0 15px 40px rgba(0, 0, 0, 0.15);
+}
+
+.loading-card strong {
+  font-size: 15px;
+}
+
+.loading-card span {
+  color: #6b7280;
+
+  font-size: 11px;
+}
+
+.loading-spinner {
+  width: 30px;
+  height: 30px;
+
+  border: 3px solid #dbeafe;
+
+  border-top-color: #2563eb;
+
+  border-radius: 50%;
+
+  animation: spin 0.7s linear infinite;
+}
+
+/* =====================================================
+   MOBILE
+===================================================== */
+
+@media (max-width: 900px) {
+
   .header {
+    height: 68px;
+
     padding: 0 16px;
   }
 
+  .logo-icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .logo h1 {
+    font-size: 18px;
+  }
+
+  .logo p {
+    font-size: 11px;
+  }
+
+  .map-wrapper {
+    height: calc(100vh - 68px);
+  }
+
   .search-panel {
-    left: 16px;
-    right: 16px;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+
+    width: auto;
+
+    flex-wrap: wrap;
+  }
+
+  .location {
+    flex: 1 1 40%;
+  }
+
+  .swap-btn {
+    position: absolute;
+
+    left: 50%;
+
+    transform: translateX(-50%);
+  }
+
+  .swap-btn:hover {
+    transform: translateX(-50%);
+  }
+
+  .search-btn {
+    width: 100%;
+  }
+
+  .route-list {
+    top: auto;
+
+    right: 12px;
+    left: 12px;
+
+    bottom: 12px;
+
     width: auto;
   }
 
   .route-card {
-    left: 16px;
-    right: 16px;
-    bottom: 16px;
-    width: auto;
+    display: none;
   }
 
-  .map-container {
-    min-height: 700px;
+  .route-options {
+    max-height: 180px;
+  }
+
+  .error-message {
+    left: 12px;
+    right: 12px;
+
+    top: 145px;
+
+    max-width: none;
   }
 }
+
+/* =====================================================
+   SMALL MOBILE
+===================================================== */
+
+@media (max-width: 560px) {
+
+  .live {
+    padding: 7px 11px;
+
+    font-size: 12px;
+  }
+
+  .location {
+    height: 56px;
+  }
+
+  .search-btn {
+    height: 54px;
+  }
+
+  .route-list {
+    padding: 12px;
+  }
+
+  .route-option-bottom {
+    gap: 7px;
+  }
+}
+
+/* =====================================================
+   LEAFLET MAP
+   The .map-wrapper is position:relative.
+   The react-leaflet MapContainer renders as
+   .leaflet-container which we force to fill the
+   entire wrapper.
+===================================================== */
+
+.leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  font-family: inherit;
+}
+
+/* =====================================================
+   LEAFLET POPUP STYLING
+===================================================== */
+
+.leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border: 1px solid #e5e7eb;
+}
+
+.leaflet-popup-content {
+  margin: 12px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #111827;
+}
+
+.leaflet-popup-content strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 3px;
+  color: #1e40af;
+}
+
+.leaflet-popup-content span {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+/* =====================================================
+   LEAFLET CONTROL Z-INDEX
+   Keep controls above the search panel overlay.
+===================================================== */
+
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 800;
+}
+
+/* =====================================================
+   LOADING SPINNER (used in dynamic import loading)
+===================================================== */
+
+.loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 4px solid #e5e7eb;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* =====================================================
+   INPUT HEADER ROW & INLINE MY LOCATION BUTTON
+===================================================== */
+
+.input-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.inline-my-location-btn {
+  background: transparent;
+  border: none;
+  color: #2563eb;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.inline-my-location-btn:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.inline-my-location-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* =====================================================
+   FLOATING MAP CUSTOM CONTROLS
+===================================================== */
+
+.map-custom-controls {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 850;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.map-control-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1f2937;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.map-control-btn:hover {
+  background: #f8fafc;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.map-control-btn.active-dest-mode {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25);
+}
+
+.pulse-dot-red {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: pulse-red 1.5s infinite;
+}
+
+@keyframes pulse-red {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.cancel-badge {
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.spinner-sm {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #cbd5e1;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+/* =====================================================
+   DESTINATION SELECTION CURSOR
+===================================================== */
+
+.selecting-destination-cursor,
+.selecting-destination-cursor .leaflet-container {
+  cursor: crosshair !important;
+}
+
+/* =====================================================
+   PULSE ANIMATION FOR CURRENT LOCATION MARKER
+===================================================== */
+
+@keyframes pulse {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
